@@ -1,30 +1,198 @@
 import { ChatAnthropic } from '@langchain/anthropic';
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';
-import { createPublicClient, createWalletClient, http, parseUnits, formatUnits, keccak256, toHex } from 'viem';
+import { Tool } from '@langchain/core/tools';
+import { createPublicClient, createWalletClient, http, parseUnits, formatUnits, type Address, type Hash } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { arcTestnet, USDC_ADDRESS, AGENTIC_COMMERCE, IDENTITY_REGISTRY, REPUTATION_REGISTRY } from '../config/chains';
-import { USDC_ABI, AGENTIC_COMMERCE_ABI, IDENTITY_REGISTRY_ABI } from '../contracts/abis';
+import { USDC_ABI, AGENTIC_COMMERCE_ABI, IDENTITY_REGISTRY_ABI, REPUTATION_ABI } from '../contracts/abis';
 
 // ============================================
 // TYPES
 // ============================================
 
-interface AgentAction {
-  type: 'transfer' | 'schedule_payment' | 'create_job' | 'register_agent' | 'check_balance' | 'rebalance';
-  params: Record<string, any>;
+export interface AgentAction {
+  type: string;
+  params: Record<string, unknown>;
   result?: string;
-  txHash?: string;
+  txHash?: Hash;
+  success: boolean;
+  timestamp: string;
 }
 
-interface AgentContext {
-  address: string;
+export interface AgentContext {
+  address: Address;
   balance: bigint;
-  agents: any[];
-  payments: any[];
+  balanceFormatted: string;
+  chainId: number;
+  network: string;
+  recentActions: AgentAction[];
+}
+
+export interface AgentConfig {
+  privateKey: `0x${string}`;
+  anthropicApiKey?: string;
+  maxActionsPerCycle?: number;
+  balanceThreshold?: string;
 }
 
 // ============================================
-// TREASURY AGENT
+// LANGCHAIN TOOLS
+// ============================================
+
+class CheckBalanceTool extends Tool {
+  name = 'check_balance';
+  description = 'Check USDC balance of an address. Input: address (0x...)';
+  
+  private publicClient;
+  
+  constructor(publicClient: ReturnType<typeof createPublicClient>) {
+    super();
+    this.publicClient = publicClient;
+  }
+
+  async _call(address: string): Promise<string> {
+    try {
+      const balance = await this.publicClient.readContract({
+        address: USDC_ADDRESS,
+        abi: USDC_ABI,
+        functionName: 'balanceOf',
+        args: [address as Address],
+      });
+      return `Balance: ${formatUnits(balance, 6)} USDC`;
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      return `Error: ${message}`;
+    }
+  }
+}
+
+class TransferUSDCTool extends Tool {
+  name = 'transfer_usdc';
+  description = 'Transfer USDC. Input: JSON {"to": "0x...", "amount": "10.5"}';
+  
+  private walletClient;
+  private account;
+  
+  constructor(walletClient: ReturnType<typeof createWalletClient>, account: ReturnType<typeof privateKeyToAccount>) {
+    super();
+    this.walletClient = walletClient;
+    this.account = account;
+  }
+
+  async _call(input: string): Promise<string> {
+    try {
+      const { to, amount } = JSON.parse(input);
+      const hash = await this.walletClient.writeContract({
+        chain: arcTestnet,
+        account: this.account,
+        address: USDC_ADDRESS,
+        abi: USDC_ABI,
+        functionName: 'transfer',
+        args: [to as Address, parseUnits(amount, 6)],
+      });
+      return `Transfer successful! TX: ${hash}`;
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      return `Transfer failed: ${message}`;
+    }
+  }
+}
+
+class GetBlockInfoTool extends Tool {
+  name = 'get_block_info';
+  description = 'Get current block info on ARC Testnet';
+  
+  private publicClient;
+  
+  constructor(publicClient: ReturnType<typeof createPublicClient>) {
+    super();
+    this.publicClient = publicClient;
+  }
+
+  async _call(): Promise<string> {
+    try {
+      const block = await this.publicClient.getBlock();
+      return `Block: ${block.number}, Timestamp: ${block.timestamp}`;
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      return `Error: ${message}`;
+    }
+  }
+}
+
+class RegisterAgentTool extends Tool {
+  name = 'register_agent';
+  description = 'Register AI agent on ERC-8004. Input: metadataURI';
+  
+  private walletClient;
+  private account;
+  
+  constructor(walletClient: ReturnType<typeof createWalletClient>, account: ReturnType<typeof privateKeyToAccount>) {
+    super();
+    this.walletClient = walletClient;
+    this.account = account;
+  }
+
+  async _call(metadataURI: string): Promise<string> {
+    try {
+      const hash = await this.walletClient.writeContract({
+        chain: arcTestnet,
+        account: this.account,
+        address: IDENTITY_REGISTRY,
+        abi: IDENTITY_REGISTRY_ABI,
+        functionName: 'register',
+        args: [metadataURI],
+      });
+      return `Agent registered! TX: ${hash}`;
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      return `Registration failed: ${message}`;
+    }
+  }
+}
+
+class CreateJobTool extends Tool {
+  name = 'create_job';
+  description = 'Create ERC-8183 job. Input: JSON {"provider": "0x...", "description": "...", "duration": 86400}';
+  
+  private walletClient;
+  private account;
+  
+  constructor(walletClient: ReturnType<typeof createWalletClient>, account: ReturnType<typeof privateKeyToAccount>) {
+    super();
+    this.walletClient = walletClient;
+    this.account = account;
+  }
+
+  async _call(input: string): Promise<string> {
+    try {
+      const { provider, description, duration = 86400 } = JSON.parse(input);
+      const expiredAt = Math.floor(Date.now() / 1000) + duration;
+      
+      const hash = await this.walletClient.writeContract({
+        chain: arcTestnet,
+        account: this.account,
+        address: AGENTIC_COMMERCE,
+        abi: AGENTIC_COMMERCE_ABI,
+        functionName: 'createJob',
+        args: [
+          provider as Address,
+          this.account.address,
+          BigInt(expiredAt),
+          description || 'AI Agent Job',
+          '0x0000000000000000000000000000000000000000' as Address,
+        ],
+      });
+      return `Job created! TX: ${hash}`;
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      return `Job creation failed: ${message}`;
+    }
+  }
+}
+
+// ============================================
+// TREASURY AGENT CLASS
 // ============================================
 
 export class TreasuryAgent {
@@ -32,14 +200,24 @@ export class TreasuryAgent {
   private publicClient;
   private walletClient;
   private account;
+  private tools: Tool[];
+  private config: AgentConfig;
+  private actionHistory: AgentAction[] = [];
 
-  constructor(privateKey: `0x${string}`) {
+  constructor(config: AgentConfig) {
+    this.config = {
+      maxActionsPerCycle: 5,
+      balanceThreshold: '1.0',
+      ...config,
+    };
+
     this.model = new ChatAnthropic({
       modelName: 'claude-3-5-sonnet-20241022',
-      anthropicApiKey: process.env.ANTHROPIC_API_KEY,
+      anthropicApiKey: config.anthropicApiKey || process.env.ANTHROPIC_API_KEY,
+      temperature: 0.1,
     });
 
-    this.account = privateKeyToAccount(privateKey);
+    this.account = privateKeyToAccount(config.privateKey);
     
     this.publicClient = createPublicClient({
       chain: arcTestnet,
@@ -47,189 +225,19 @@ export class TreasuryAgent {
     });
 
     this.walletClient = createWalletClient({
-      account: this.account,
       chain: arcTestnet,
+      account: this.account,
       transport: http(),
     });
-  }
 
-  // ============================================
-  // CORE AGENT LOOP
-  // ============================================
-
-  async analyze(context: AgentContext): Promise<AgentAction[]> {
-    const systemPrompt = `You are an AI Treasury Manager on ARC Network (Chain ID: 5042002).
-
-Your capabilities:
-1. Check USDC balance
-2. Transfer USDC to recipients
-3. Schedule recurring payments
-4. Create ERC-8183 jobs for other AI agents
-5. Register agents on ERC-8004 identity registry
-6. Rebalance treasury allocations
-
-Current Context:
-- Wallet: ${context.address}
-- USDC Balance: ${formatUnits(context.balance, 6)} USDC
-- Active Agents: ${context.agents.length}
-- Scheduled Payments: ${context.payments.length}
-
-Rules:
-- Always verify sufficient balance before transfers
-- Use sub-second finality for real-time operations
-- Prefer scheduled payments for recurring expenses
-- Monitor agent reputation and adjust budgets
-
-Respond with a JSON array of actions to take. Each action should have:
-- type: one of the above capabilities
-- params: parameters for the action
-
-Example response:
-[{"type": "check_balance", "params": {"address": "0x..."}}]`;
-
-    const messages = [
-      new SystemMessage(systemPrompt),
-      new HumanMessage(JSON.stringify({
-        task: 'Analyze treasury status and recommend actions',
-        context: context,
-        timestamp: new Date().toISOString(),
-      })),
+    // Initialize tools with account
+    this.tools = [
+      new CheckBalanceTool(this.publicClient),
+      new TransferUSDCTool(this.walletClient, this.account),
+      new GetBlockInfoTool(this.publicClient),
+      new RegisterAgentTool(this.walletClient, this.account),
+      new CreateJobTool(this.walletClient, this.account),
     ];
-
-    const response = await this.model.invoke(messages);
-    
-    try {
-      // Parse actions from AI response
-      const content = response.content as string;
-      const jsonMatch = content.match(/\[[\s\S]*\]/);
-      if (jsonMatch) {
-        return JSON.parse(jsonMatch[0]);
-      }
-      return [];
-    } catch (error) {
-      console.error('Failed to parse agent actions:', error);
-      return [];
-    }
-  }
-
-  // ============================================
-  // ACTION EXECUTORS
-  // ============================================
-
-  async executeAction(action: AgentAction): Promise<AgentAction> {
-    switch (action.type) {
-      case 'check_balance':
-        return this.checkBalance(action);
-      case 'transfer':
-        return this.transferUSDC(action);
-      case 'schedule_payment':
-        return this.schedulePayment(action);
-      case 'create_job':
-        return this.createJob(action);
-      case 'register_agent':
-        return this.registerAgent(action);
-      default:
-        return { ...action, result: 'Unknown action type' };
-    }
-  }
-
-  private async checkBalance(action: AgentAction): Promise<AgentAction> {
-    const balance = await this.publicClient.readContract({
-      address: USDC_ADDRESS,
-      abi: USDC_ABI,
-      functionName: 'balanceOf',
-      args: [action.params.address as `0x${string}`],
-    });
-
-    return {
-      ...action,
-      result: `Balance: ${formatUnits(balance, 6)} USDC`,
-    };
-  }
-
-  private async transferUSDC(action: AgentAction): Promise<AgentAction> {
-    try {
-      const hash = await this.walletClient.writeContract({
-        address: USDC_ADDRESS,
-        abi: USDC_ABI,
-        functionName: 'transfer',
-        args: [
-          action.params.to as `0x${string}`,
-          parseUnits(action.params.amount.toString(), 6),
-        ],
-      });
-
-      return {
-        ...action,
-        result: `Transfer successful`,
-        txHash: hash,
-      };
-    } catch (error: any) {
-      return {
-        ...action,
-        result: `Transfer failed: ${error.message}`,
-      };
-    }
-  }
-
-  private async schedulePayment(action: AgentAction): Promise<AgentAction> {
-    // Implementation for scheduling payments
-    return {
-      ...action,
-      result: 'Payment scheduled',
-    };
-  }
-
-  private async createJob(action: AgentAction): Promise<AgentAction> {
-    try {
-      const expiredAt = Math.floor(Date.now() / 1000) + (action.params.duration || 86400);
-      
-      const hash = await this.walletClient.writeContract({
-        address: AGENTIC_COMMERCE,
-        abi: AGENTIC_COMMERCE_ABI,
-        functionName: 'createJob',
-        args: [
-          action.params.provider as `0x${string}`,
-          this.account.address,
-          BigInt(expiredAt),
-          action.params.description || 'AI Agent Job',
-          '0x0000000000000000000000000000000000000000',
-        ],
-      });
-
-      return {
-        ...action,
-        result: 'Job created',
-        txHash: hash,
-      };
-    } catch (error: any) {
-      return {
-        ...action,
-        result: `Job creation failed: ${error.message}`,
-      };
-    }
-  }
-
-  private async registerAgent(action: AgentAction): Promise<AgentAction> {
-    try {
-      const hash = await this.walletClient.writeContract({
-        address: IDENTITY_REGISTRY,
-        abi: IDENTITY_REGISTRY_ABI,
-        functionName: 'register',
-        args: [action.params.metadataURI || 'ipfs://default-metadata'],
-      });
-
-      return {
-        ...action,
-        result: 'Agent registered on ERC-8004',
-        txHash: hash,
-      };
-    } catch (error: any) {
-      return {
-        ...action,
-        result: `Registration failed: ${error.message}`,
-      };
-    }
   }
 
   // ============================================
@@ -247,9 +255,176 @@ Example response:
     return {
       address: this.account.address,
       balance,
-      agents: [], // Would fetch from contract
-      payments: [], // Would fetch from contract
+      balanceFormatted: formatUnits(balance, 6),
+      chainId: arcTestnet.id,
+      network: arcTestnet.name,
+      recentActions: this.actionHistory.slice(-10),
     };
+  }
+
+  // ============================================
+  // AI ANALYSIS
+  // ============================================
+
+  async analyze(context: AgentContext): Promise<AgentAction[]> {
+    const systemPrompt = `You are ArcAgent Treasury, an autonomous AI agent managing USDC treasury on ARC Network.
+
+CAPABILITIES:
+- check_balance: Check USDC balance of any address
+- transfer_usdc: Transfer USDC to recipients
+- register_agent: Register new AI agents on ERC-8004
+- create_job: Create ERC-8183 jobs for other agents
+- get_block_info: Get current blockchain state
+
+CURRENT STATE:
+- Wallet: ${context.address}
+- Balance: ${context.balanceFormatted} USDC
+- Network: ${context.network} (Chain ID: ${context.chainId})
+
+RULES:
+1. Always verify sufficient balance before transfers
+2. Never transfer more than 50% of balance in one action
+3. Log all actions for audit trail
+
+Respond with a JSON array of actions. Each action:
+{"type": "tool_name", "params": {...}, "reason": "why"}
+
+If no action needed, return: []`;
+
+    const messages = [
+      new SystemMessage(systemPrompt),
+      new HumanMessage(`Analyze treasury state and recommend actions.
+        
+Time: ${new Date().toISOString()}
+Balance: ${context.balanceFormatted} USDC
+Recent: ${JSON.stringify(context.recentActions.slice(-3))}`),
+    ];
+
+    try {
+      const response = await this.model.invoke(messages);
+      const content = response.content as string;
+      
+      const jsonMatch = content.match(/\[[\s\S]*\]/);
+      if (jsonMatch) {
+        const actions = JSON.parse(jsonMatch[0]);
+        return actions.map((a: Record<string, unknown>) => ({
+          ...a,
+          success: false,
+          timestamp: new Date().toISOString(),
+        }));
+      }
+      
+      return [];
+    } catch (error) {
+      console.error('[TreasuryAgent] Analysis failed:', error);
+      return [];
+    }
+  }
+
+  // ============================================
+  // ACTION EXECUTION
+  // ============================================
+
+  async executeAction(action: AgentAction): Promise<AgentAction> {
+    console.log(`[TreasuryAgent] Executing: ${action.type}`);
+    
+    try {
+      let result: string;
+      let txHash: Hash | undefined;
+
+      switch (action.type) {
+        case 'check_balance': {
+          const balance = await this.publicClient.readContract({
+            address: USDC_ADDRESS,
+            abi: USDC_ABI,
+            functionName: 'balanceOf',
+            args: [action.params.address as Address],
+          });
+          result = `Balance: ${formatUnits(balance, 6)} USDC`;
+          break;
+        }
+
+        case 'transfer_usdc': {
+          const { to, amount } = action.params;
+          txHash = await this.walletClient.writeContract({
+            chain: arcTestnet,
+            account: this.account,
+            address: USDC_ADDRESS,
+            abi: USDC_ABI,
+            functionName: 'transfer',
+            args: [to as Address, parseUnits(amount as string, 6)],
+          });
+          result = `Transferred ${amount} USDC to ${to}`;
+          break;
+        }
+
+        case 'register_agent': {
+          const { metadataURI } = action.params;
+          txHash = await this.walletClient.writeContract({
+            chain: arcTestnet,
+            account: this.account,
+            address: IDENTITY_REGISTRY,
+            abi: IDENTITY_REGISTRY_ABI,
+            functionName: 'register',
+            args: [metadataURI as string],
+          });
+          result = `Agent registered`;
+          break;
+        }
+
+        case 'create_job': {
+          const { provider, description, duration = 86400 } = action.params;
+          const expiredAt = Math.floor(Date.now() / 1000) + (duration as number);
+          txHash = await this.walletClient.writeContract({
+            chain: arcTestnet,
+            account: this.account,
+            address: AGENTIC_COMMERCE,
+            abi: AGENTIC_COMMERCE_ABI,
+            functionName: 'createJob',
+            args: [
+              provider as Address,
+              this.account.address,
+              BigInt(expiredAt),
+              (description as string) || 'AI Agent Job',
+              '0x0000000000000000000000000000000000000000' as Address,
+            ],
+          });
+          result = `Job created: ${description}`;
+          break;
+        }
+
+        case 'get_block_info': {
+          const block = await this.publicClient.getBlock();
+          result = `Block: ${block.number}, Timestamp: ${block.timestamp}`;
+          break;
+        }
+
+        default:
+          result = `Unknown action: ${action.type}`;
+      }
+
+      const executedAction: AgentAction = {
+        ...action,
+        result,
+        txHash,
+        success: true,
+        timestamp: new Date().toISOString(),
+      };
+
+      this.actionHistory.push(executedAction);
+      return executedAction;
+
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      const failedAction: AgentAction = {
+        ...action,
+        result: `Failed: ${message}`,
+        success: false,
+        timestamp: new Date().toISOString(),
+      };
+      this.actionHistory.push(failedAction);
+      return failedAction;
+    }
   }
 
   // ============================================
@@ -257,27 +432,49 @@ Example response:
   // ============================================
 
   async run(): Promise<AgentAction[]> {
-    console.log('[TreasuryAgent] Starting analysis cycle...');
-    
-    // Gather context
+    console.log('[TreasuryAgent] Starting cycle...');
+    const startTime = Date.now();
+
     const context = await this.gatherContext();
-    console.log('[TreasuryAgent] Context gathered:', {
-      address: context.address,
-      balance: formatUnits(context.balance, 6),
-    });
+    console.log(`[TreasuryAgent] Balance: ${context.balanceFormatted} USDC`);
 
-    // Analyze with AI
     const actions = await this.analyze(context);
-    console.log('[TreasuryAgent] AI recommended', actions.length, 'actions');
+    console.log(`[TreasuryAgent] AI recommended ${actions.length} actions`);
 
-    // Execute actions
+    const maxActions = this.config.maxActionsPerCycle || 5;
+    const actionsToExecute = actions.slice(0, maxActions);
+    
     const results: AgentAction[] = [];
-    for (const action of actions) {
-      console.log('[TreasuryAgent] Executing:', action.type);
+    for (const action of actionsToExecute) {
       const result = await this.executeAction(action);
       results.push(result);
+      
+      if (result.success) {
+        console.log(`[TreasuryAgent] ✓ ${result.type}: ${result.result}`);
+      } else {
+        console.error(`[TreasuryAgent] ✗ ${result.type}: ${result.result}`);
+      }
     }
 
+    const duration = Date.now() - startTime;
+    console.log(`[TreasuryAgent] Cycle complete in ${duration}ms`);
+
     return results;
+  }
+
+  // ============================================
+  // GETTERS
+  // ============================================
+
+  getAddress(): Address {
+    return this.account.address;
+  }
+
+  getActionHistory(): AgentAction[] {
+    return [...this.actionHistory];
+  }
+
+  getTools(): Tool[] {
+    return [...this.tools];
   }
 }

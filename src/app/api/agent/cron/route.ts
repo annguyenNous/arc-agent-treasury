@@ -14,12 +14,16 @@ export async function GET(request: NextRequest) {
     
     if (!privateKey || privateKey === '0x') {
       return NextResponse.json(
-        { error: 'Agent private key not configured' },
+        { error: 'AGENT_PRIVATE_KEY not configured' },
         { status: 500 }
       );
     }
 
-    const agent = new TreasuryAgent(privateKey);
+    const agent = new TreasuryAgent({
+      privateKey,
+      maxActionsPerCycle: 3,
+    });
+    
     const results = await agent.run();
 
     return NextResponse.json({
@@ -27,11 +31,9 @@ export async function GET(request: NextRequest) {
       results,
       executedAt: new Date().toISOString(),
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
     console.error('[Cron] Error:', error);
-    return NextResponse.json(
-      { error: error.message },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

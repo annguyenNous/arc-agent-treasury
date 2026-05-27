@@ -47,11 +47,16 @@ _USDC: 0x3600000000000000000000000000000000000000
 
 ### Deployed Addresses
 
-Update this section after deployment:
+After deployment, update this table:
 
 | Contract | Address | Verified |
 |----------|---------|----------|
-| AgentTreasury | `0x...` | ⏳ Pending |
+| AgentTreasury | `TBD` | ⏳ Pending |
+
+**Quick deploy + verify:**
+```bash
+bash scripts/deploy-and-verify.sh
+```
 
 ### Troubleshooting
 

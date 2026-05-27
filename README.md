@@ -44,24 +44,32 @@ ArcAgent Treasury enables autonomous AI agents to manage treasury operations on 
 
 | Contract | Address | Verified |
 |----------|---------|----------|
-| ERC-8004 Identity Registry | `0x8004A818BFB912233c491871b3d84c89A494BD9e` | ✅ |
-| ERC-8004 Reputation Registry | `0x8004B663056A597Dffe9eCcC1965A193B7388713` | ✅ |
-| ERC-8004 Validation Registry | `0x8004Cb1BF31DAf7788923b405b754f57acEB4272` | ✅ |
-| ERC-8183 Agentic Commerce | `0x0747EEf0706327138c69792bF28Cd525089e4583` | ✅ |
-| USDC | `0x3600000000000000000000000000000000000000` | ✅ |
-| AgentTreasury | `TBD` | ⏳ Pending |
+| ERC-8004 Identity Registry | [`0x8004A818BFB912233c491871b3d84c89A494BD9e`](https://testnet.arcscan.app/address/0x8004A818BFB912233c491871b3d84c89A494BD9e) | ✅ |
+| ERC-8004 Reputation Registry | [`0x8004B663056A597Dffe9eCcC1965A193B7388713`](https://testnet.arcscan.app/address/0x8004B663056A597Dffe9eCcC1965A193B7388713) | ✅ |
+| ERC-8004 Validation Registry | [`0x8004Cb1BF31DAf7788923b405b754f57acEB4272`](https://testnet.arcscan.app/address/0x8004Cb1BF31DAf7788923b405b754f57acEB4272) | ✅ |
+| ERC-8183 Agentic Commerce | [`0x0747EEf0706327138c69792bF28Cd525089e4583`](https://testnet.arcscan.app/address/0x0747EEf0706327138c69792bF28Cd525089e4583) | ✅ |
+| USDC | [`0x3600000000000000000000000000000000000000`](https://testnet.arcscan.app/address/0x3600000000000000000000000000000000000000) | ✅ |
+| AgentTreasury | See deploy below | ⏳ Deploy & Verify |
 
-## Contract Verification
-
-To verify contracts on ArcScan:
+## Deploy & Verify AgentTreasury
 
 ```bash
-# Flatten the contract
-bash scripts/flatten.sh
+# 1. Set your testnet private key in .env.local
+echo "AGENT_PRIVATE_KEY=0xYOUR_KEY_HERE" >> .env.local
 
-# Then verify manually on https://testnet.arcscan.app
-# See docs/VERIFICATION.md for detailed instructions
+# 2. Deploy + auto-verify in one command
+npx hardhat run scripts/deploy.ts --network arcTestnet
+
+# 3. Verify on ArcScan (replace ADDRESS)
+npx hardhat verify --network arcTestnet ADDRESS 0x3600000000000000000000000000000000000000
 ```
+
+Or use the all-in-one script:
+```bash
+bash scripts/deploy-and-verify.sh
+```
+
+See [docs/VERIFICATION.md](docs/VERIFICATION.md) for manual verification steps.
 
 ## Getting Started
 

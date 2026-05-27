@@ -37,6 +37,9 @@ export const VALIDATION_REGISTRY = '0x8004Cb1BF31DAf7788923b405b754f57acEB4272' 
 // ERC-8183 Agentic Commerce
 export const AGENTIC_COMMERCE = '0x0747EEf0706327138c69792bF28Cd525089e4583' as const;
 
+// AgentTreasury
+export const AGENT_TREASURY = '0x32faE7187a00f096B0536Ad4872fb324Bae39671' as const;
+
 // USDC on ARC Testnet (native gas token)
 export const USDC_ADDRESS = '0x3600000000000000000000000000000000000000' as const;
 

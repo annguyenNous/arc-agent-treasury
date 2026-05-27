@@ -51,7 +51,7 @@ After deployment, update this table:
 
 | Contract | Address | Verified |
 |----------|---------|----------|
-| AgentTreasury | `TBD` | ⏳ Pending |
+| AgentTreasury | [`0x32faE7187a00f096B0536Ad4872fb324Bae39671`](https://testnet.arcscan.app/address/0x32faE7187a00f096B0536Ad4872fb324Bae39671) | ✅ Verified |
 
 **Quick deploy + verify:**
 ```bash

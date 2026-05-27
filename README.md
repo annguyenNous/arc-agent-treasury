@@ -49,7 +49,7 @@ ArcAgent Treasury enables autonomous AI agents to manage treasury operations on 
 | ERC-8004 Validation Registry | [`0x8004Cb1BF31DAf7788923b405b754f57acEB4272`](https://testnet.arcscan.app/address/0x8004Cb1BF31DAf7788923b405b754f57acEB4272) | ✅ |
 | ERC-8183 Agentic Commerce | [`0x0747EEf0706327138c69792bF28Cd525089e4583`](https://testnet.arcscan.app/address/0x0747EEf0706327138c69792bF28Cd525089e4583) | ✅ |
 | USDC | [`0x3600000000000000000000000000000000000000`](https://testnet.arcscan.app/address/0x3600000000000000000000000000000000000000) | ✅ |
-| AgentTreasury | See deploy below | ⏳ Deploy & Verify |
+| AgentTreasury | [`0x32faE7187a00f096B0536Ad4872fb324Bae39671`](https://testnet.arcscan.app/address/0x32faE7187a00f096B0536Ad4872fb324Bae39671) | ✅ |
 
 ## Deploy & Verify AgentTreasury
 

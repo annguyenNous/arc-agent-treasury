@@ -5,6 +5,7 @@ import { createPublicClient, createWalletClient, http, parseUnits, formatUnits, 
 import { privateKeyToAccount } from 'viem/accounts';
 import { arcTestnet, USDC_ADDRESS, AGENTIC_COMMERCE, IDENTITY_REGISTRY, REPUTATION_REGISTRY } from '../config/chains';
 import { USDC_ABI, AGENTIC_COMMERCE_ABI, IDENTITY_REGISTRY_ABI, REPUTATION_ABI } from '../contracts/abis';
+import { CreateEscrowTool, RebalanceYieldTool, ProcessPayrollTool, VerifyInvoiceTool } from './tools';
 
 // ============================================
 // TYPES
@@ -236,6 +237,11 @@ export class TreasuryAgent {
       new GetBlockInfoTool(this.publicClient),
       new RegisterAgentTool(this.walletClient, this.account),
       new CreateJobTool(this.walletClient, this.account),
+      // New tools from Circle + TreasuryPilot patterns
+      new CreateEscrowTool(this.walletClient, this.account),
+      new RebalanceYieldTool(this.publicClient, this.walletClient, this.account),
+      new ProcessPayrollTool(this.walletClient, this.account),
+      new VerifyInvoiceTool(this.walletClient, this.account),
     ];
   }
 

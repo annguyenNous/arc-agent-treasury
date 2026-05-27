@@ -1,15 +1,17 @@
 import { TreasuryAgent, type AgentAction, type AgentConfig } from './TreasuryAgent';
-import { nodeCron, type ScheduledTask } from 'node-cron';
+import { SupervisorAgent, createSupervisorAgent, type AgentRole } from './MultiAgent';
+import nodeCron from 'node-cron';
 
 // ============================================
 // TYPES
 // ============================================
 
 export interface CronConfig {
-  intervalMs: number; // Interval in milliseconds
+  intervalMs: number;
   agentConfig: AgentConfig;
   enabled: boolean;
   maxRuns?: number;
+  multiAgent?: boolean; // Enable multi-agent mode
 }
 
 export interface JobStatus {
@@ -18,15 +20,17 @@ export interface JobStatus {
   runCount: number;
   lastRun?: string;
   lastResults?: AgentAction[];
+  mode?: 'single' | 'multi';
 }
 
 // ============================================
-// CRON MANAGER WITH NODE-CRON
+// CRON MANAGER WITH MULTI-AGENT SUPPORT
 // ============================================
 
 export class CronManager {
-  private jobs: Map<string, ScheduledTask> = new Map();
+  private jobs: Map<string, any> = new Map();
   private agents: Map<string, TreasuryAgent> = new Map();
+  private supervisors: Map<string, SupervisorAgent> = new Map();
   private configs: Map<string, CronConfig> = new Map();
   private runCounts: Map<string, number> = new Map();
   private results: Map<string, AgentAction[][]> = new Map();
@@ -41,14 +45,25 @@ export class CronManager {
       throw new Error(`Job ${id} already exists`);
     }
 
-    const agent = new TreasuryAgent(config.agentConfig);
-    this.agents.set(id, agent);
+    if (config.multiAgent) {
+      // Create supervisor with all specialized agents
+      const supervisor = createSupervisorAgent(
+        config.agentConfig.privateKey,
+        config.agentConfig.anthropicApiKey
+      );
+      this.supervisors.set(id, supervisor);
+    } else {
+      // Create single agent
+      const agent = new TreasuryAgent(config.agentConfig);
+      this.agents.set(id, agent);
+    }
+
     this.configs.set(id, config);
     this.runCounts.set(id, 0);
     this.results.set(id, []);
     this.running.set(id, false);
 
-    console.log(`[CronManager] Added job: ${id} (interval: ${config.intervalMs}ms)`);
+    console.log(`[CronManager] Added job: ${id} (mode: ${config.multiAgent ? 'multi-agent' : 'single'})`);
   }
 
   startJob(id: string): void {
@@ -62,14 +77,13 @@ export class CronManager {
       return;
     }
 
-    // Convert intervalMs to cron expression
     const intervalMinutes = Math.max(1, Math.floor(config.intervalMs / 60000));
     const cronExpression = `*/${intervalMinutes} * * * *`;
 
     const task = nodeCron.schedule(cronExpression, async () => {
       await this.executeJob(id);
     }, {
-      timezone: 'Asia/Ho_Chi_Minh', // Vietnam timezone
+      timezone: 'Asia/Ho_Chi_Minh',
     });
 
     if (task) {
@@ -92,6 +106,7 @@ export class CronManager {
   removeJob(id: string): void {
     this.stopJob(id);
     this.agents.delete(id);
+    this.supervisors.delete(id);
     this.configs.delete(id);
     this.runCounts.delete(id);
     this.results.delete(id);
@@ -100,21 +115,19 @@ export class CronManager {
   }
 
   // ============================================
-  // JOB EXECUTION
+  // JOB EXECUTION (SINGLE OR MULTI-AGENT)
   // ============================================
 
   private async executeJob(id: string): Promise<void> {
-    const agent = this.agents.get(id);
+    const config = this.configs.get(id);
     const runCount = this.runCounts.get(id) || 0;
     const results = this.results.get(id) || [];
-    const config = this.configs.get(id);
 
-    if (!agent || !config) {
-      console.error(`[CronManager] Agent or config not found for job: ${id}`);
+    if (!config) {
+      console.error(`[CronManager] Config not found for job: ${id}`);
       return;
     }
 
-    // Check max runs
     if (config.maxRuns && runCount >= config.maxRuns) {
       console.log(`[CronManager] Job ${id} reached max runs (${config.maxRuns}), stopping`);
       this.stopJob(id);
@@ -124,12 +137,27 @@ export class CronManager {
     console.log(`[CronManager] Executing job: ${id} (run #${runCount + 1})`);
 
     try {
-      const actions = await agent.run();
+      let actions: AgentAction[] = [];
+
+      if (config.multiAgent) {
+        // Multi-agent mode: run all specialized agents
+        const supervisor = this.supervisors.get(id);
+        if (supervisor) {
+          const allResults = await supervisor.runAll();
+          actions = Array.from(allResults.values()).flat();
+        }
+      } else {
+        // Single agent mode
+        const agent = this.agents.get(id);
+        if (agent) {
+          actions = await agent.run();
+        }
+      }
+
       results.push(actions);
       this.runCounts.set(id, runCount + 1);
       this.results.set(id, results);
 
-      // Log summary
       const successful = actions.filter(a => a.success).length;
       const failed = actions.filter(a => !a.success).length;
       console.log(`[CronManager] Job ${id} complete: ${successful} successful, ${failed} failed`);
@@ -144,6 +172,7 @@ export class CronManager {
   // ============================================
 
   getJobStatus(id: string): JobStatus {
+    const config = this.configs.get(id);
     const runCount = this.runCounts.get(id) || 0;
     const results = this.results.get(id) || [];
     const lastResults = results[results.length - 1] || [];
@@ -153,22 +182,17 @@ export class CronManager {
       running: this.running.get(id) || false,
       runCount,
       lastResults,
+      mode: config?.multiAgent ? 'multi' : 'single',
     };
   }
 
   getAllJobs(): JobStatus[] {
     const jobs: JobStatus[] = [];
-    
-    Array.from(this.agents.keys()).forEach(id => {
+    Array.from(this.configs.keys()).forEach(id => {
       jobs.push(this.getJobStatus(id));
     });
-
     return jobs;
   }
-
-  // ============================================
-  // START/STOP ALL
-  // ============================================
 
   startAll(): void {
     Array.from(this.configs.keys()).forEach(id => {
@@ -199,7 +223,7 @@ export function getCronManager(): CronManager {
 }
 
 // ============================================
-// QUICK START FUNCTION
+// QUICK START FUNCTIONS
 // ============================================
 
 export function startTreasuryCron(
@@ -213,7 +237,7 @@ export function startTreasuryCron(
   const manager = getCronManager();
   
   const config: CronConfig = {
-    intervalMs: (options.intervalMinutes || 5) * 60 * 1000, // Default 5 minutes
+    intervalMs: (options.intervalMinutes || 5) * 60 * 1000,
     agentConfig: {
       privateKey,
       anthropicApiKey: options.anthropicApiKey,
@@ -222,10 +246,40 @@ export function startTreasuryCron(
     },
     enabled: true,
     maxRuns: options.maxRuns,
+    multiAgent: false,
   };
 
   manager.addJob('treasury-agent', config);
   manager.startJob('treasury-agent');
+
+  return manager;
+}
+
+export function startMultiAgentCron(
+  privateKey: `0x${string}`,
+  options: {
+    intervalMinutes?: number;
+    anthropicApiKey?: string;
+    maxRuns?: number;
+  } = {}
+): CronManager {
+  const manager = getCronManager();
+  
+  const config: CronConfig = {
+    intervalMs: (options.intervalMinutes || 5) * 60 * 1000,
+    agentConfig: {
+      privateKey,
+      anthropicApiKey: options.anthropicApiKey,
+      maxActionsPerCycle: 3,
+      balanceThreshold: '1.0',
+    },
+    enabled: true,
+    maxRuns: options.maxRuns,
+    multiAgent: true, // Enable multi-agent mode
+  };
+
+  manager.addJob('multi-agent-treasury', config);
+  manager.startJob('multi-agent-treasury');
 
   return manager;
 }

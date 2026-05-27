@@ -1,19 +1,22 @@
 'use client';
 
-import { useAccount, useReadContract } from 'wagmi';
+import { useAccount, useBalance, useReadContract } from 'wagmi';
+// Hooks available: useTreasuryBalance, useTreasuryInfo from '@/hooks/useTreasury'
 import { USDC_ADDRESS } from '@/config/chains';
 import { USDC_ABI } from '@/contracts/abis';
 
 export default function TreasuryOverview() {
   const { address, isConnected } = useAccount();
 
-  const { data: balance, isLoading } = useReadContract({
+  const { data: usdcBalance, isLoading } = useReadContract({
     address: USDC_ADDRESS,
     abi: USDC_ABI,
     functionName: 'balanceOf',
     args: address ? [address] : undefined,
-    query: { enabled: !!address },
+    query: { enabled: !!address, refetchInterval: 5000 },
   });
+
+  const { data: nativeBalance } = useBalance({ address }); // eslint-disable-line @typescript-eslint/no-unused-vars
 
   if (!isConnected) {
     return (
@@ -29,7 +32,7 @@ export default function TreasuryOverview() {
     );
   }
 
-  const formattedBalance = balance ? (Number(balance) / 1e6).toFixed(2) : '0.00';
+  const formattedBalance = usdcBalance ? (Number(usdcBalance) / 1e6).toFixed(2) : '0.00';
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -42,7 +45,9 @@ export default function TreasuryOverview() {
           </span>
           <span className="text-lg text-violet-300">USDC</span>
         </div>
-        <p className="text-xs text-violet-400 mt-2">ARC Testnet · Sub-second finality</p>
+        <p className="text-xs text-violet-400 mt-2">
+          ARC Testnet · Chain ID: 5042002 · Sub-second finality
+        </p>
       </div>
 
       {/* Active Agents */}

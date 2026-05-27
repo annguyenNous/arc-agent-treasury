@@ -5,7 +5,7 @@ import { arcTestnet } from './chains';
 
 export const config = getDefaultConfig({
   appName: 'ArcAgent Treasury',
-  projectId: 'arc-agent-treasury',
+  projectId: process.env.NEXT_PUBLIC_WC_PROJECT_ID || 'arc-agent-treasury-demo',
   chains: [arcTestnet],
   ssr: true,
 });

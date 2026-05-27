@@ -1,9 +1,9 @@
 'use client';
 
 import { useState } from 'react';
-import { useAccount, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
-import { IDENTITY_REGISTRY, EXPLORER_URL } from '@/config/chains';
-import { IDENTITY_REGISTRY_ABI } from '@/contracts/abis';
+import { useAccount } from 'wagmi';
+import { useRegisterAgent } from '@/hooks/useAgent';
+import { EXPLORER_URL } from '@/config/chains';
 
 const AGENT_TYPES = [
   { value: 'treasury', label: 'Treasury Manager', desc: 'Manage treasury funds and allocations' },
@@ -20,18 +20,33 @@ export default function RegisterAgent() {
   const [description, setDescription] = useState('');
   const [metadataURI, setMetadataURI] = useState('');
 
-  const { writeContract, data: txHash, isPending } = useWriteContract();
-  const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash: txHash });
+  const { register, txHash, isPending, isConfirming, isSuccess, error } = useRegisterAgent();
 
   const handleRegister = () => {
-    // In production, metadata would be uploaded to IPFS first
-    const uri = metadataURI || 'ipfs://bafkreibdemo' + Date.now();
-    writeContract({
-      address: IDENTITY_REGISTRY,
-      abi: IDENTITY_REGISTRY_ABI,
-      functionName: 'register',
-      args: [uri],
-    });
+    // Build metadata JSON (for IPFS upload in production)
+    const _metadata = {
+      name,
+      description,
+      agent_type: agentType,
+      capabilities: getCapabilities(agentType),
+      version: '1.0.0',
+    };
+
+    // In production, upload to IPFS first
+    // For demo, use a placeholder URI
+    const uri = metadataURI || `ipfs://bafkreib${Date.now()}`;
+    register(uri);
+  };
+
+  const getCapabilities = (type: string): string[] => {
+    const caps: Record<string, string[]> = {
+      treasury: ['balance_monitoring', 'auto_rebalance', 'risk_assessment'],
+      payment: ['invoice_processing', 'scheduled_payments', 'receipt_tracking'],
+      arbitrage: ['rate_monitoring', 'cross_dex_arbitrage', 'profit_optimization'],
+      liquidity: ['lp_management', 'yield_farming', 'impermanent_loss_hedging'],
+      billing: ['invoice_processing', 'automated_payments', 'receipt_generation'],
+    };
+    return caps[type] || [];
   };
 
   if (!isConnected) {
@@ -45,7 +60,7 @@ export default function RegisterAgent() {
 
   return (
     <div className="bg-gray-900 rounded-2xl p-6 border border-gray-800">
-      <h2 className="text-lg font-semibold text-white mb-6">Register New Agent</h2>
+      <h2 className="text-lg font-semibold text-white mb-6">Register New Agent (ERC-8004)</h2>
 
       {isSuccess ? (
         <div className="text-center py-8">
@@ -56,14 +71,25 @@ export default function RegisterAgent() {
           </div>
           <h3 className="text-xl font-semibold text-green-400 mb-2">Agent Registered!</h3>
           <p className="text-gray-400 mb-4">Your AI agent is now onchain via ERC-8004</p>
-          <a
-            href={`${EXPLORER_URL}/tx/${txHash}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-violet-400 hover:underline text-sm"
+          {txHash && (
+            <a
+              href={`${EXPLORER_URL}/tx/${txHash}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-violet-400 hover:underline text-sm"
+            >
+              View on Explorer →
+            </a>
+          )}
+          <button
+            onClick={() => {
+              setName('');
+              setMetadataURI('');
+            }}
+            className="block mx-auto mt-4 text-sm text-gray-400 hover:text-white"
           >
-            View on Explorer →
-          </a>
+            Register another
+          </button>
         </div>
       ) : (
         <div className="space-y-4">
@@ -120,6 +146,10 @@ export default function RegisterAgent() {
             />
             <p className="text-xs text-gray-500 mt-1">IPFS URI with agent metadata JSON</p>
           </div>
+
+          {error && (
+            <p className="text-red-400 text-sm">{error.message}</p>
+          )}
 
           <button
             onClick={handleRegister}

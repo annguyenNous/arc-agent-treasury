@@ -32,7 +32,7 @@ export interface AgentConfig {
   privateKey: `0x${string}`;
   anthropicApiKey?: string;
   maxActionsPerCycle?: number;
-  balanceThreshold?: string; // Minimum USDC balance to allow transfers
+  balanceThreshold?: string;
 }
 
 // ============================================
@@ -100,7 +100,7 @@ class TransferUSDCTool extends Tool {
 
 class GetBlockInfoTool extends Tool {
   name = 'get_block_info';
-  description = 'Get current block info on ARC Testnet';
+  description = 'Get current block info on ARC Testnet. Input: (none)';
   
   private publicClient;
   
@@ -122,7 +122,7 @@ class GetBlockInfoTool extends Tool {
 
 class RegisterAgentTool extends Tool {
   name = 'register_agent';
-  description = 'Register AI agent on ERC-8004. Input: metadataURI';
+  description = 'Register AI agent on ERC-8004. Input: metadataURI (string)';
   
   private walletClient;
   private account;
@@ -206,7 +206,7 @@ export class TreasuryAgent {
 
   constructor(config: AgentConfig) {
     this.config = {
-      maxActionsPerCycle: 5,
+      maxActionsPerCycle: 3,
       balanceThreshold: '1.0',
       ...config,
     };
@@ -266,155 +266,82 @@ export class TreasuryAgent {
   // ============================================
 
   async analyze(context: AgentContext): Promise<AgentAction[]> {
-    const systemPrompt = `You are ArcAgent Treasury, an autonomous AI agent managing USDC treasury on ARC Network.
+    const systemPrompt = `Bạn là ArcAgent Treasury, AI agent quản lý USDC trên ARC Network.
 
-CAPABILITIES:
-- check_balance: Check USDC balance of any address
-- transfer_usdc: Transfer USDC to recipients
-- register_agent: Register new AI agents on ERC-8004
-- create_job: Create ERC-8183 jobs for other agents
-- get_block_info: Get current blockchain state
+TOOLS CÓ SẴN:
+- check_balance: Kiểm tra số dư USDC. Input: address (0x...)
+- transfer_usdc: Chuyển USDC. Input: JSON {"to": "0x...", "amount": "10.5"}
+- register_agent: Đăng ký agent ERC-8004. Input: metadataURI (string)
+- create_job: Tạo job ERC-8183. Input: JSON {"provider": "0x...", "description": "...", "duration": 86400}
+- get_block_info: Lấy thông tin block hiện tại. Input: (none)
 
-CURRENT STATE:
+TRẠNG THÁI HIỆN TẠI:
 - Wallet: ${context.address}
 - Balance: ${context.balanceFormatted} USDC
 - Network: ${context.network} (Chain ID: ${context.chainId})
-- Threshold: ${this.config.balanceThreshold} USDC minimum
 
-SAFETY RULES:
-1. NEVER transfer if balance < ${this.config.balanceThreshold} USDC
-2. NEVER transfer more than 50% of balance in one action
-3. Always check balance before transfers
-4. Prefer small test transfers first
+QUY TẮC AN TOÀN:
+1. KHÔNG chuyển nếu balance < 1 USDC
+2. KHÔNG chuyển quá 50% balance
+3. Luôn check balance trước khi transfer
 
-Respond with a JSON array of actions. Each action:
-{"type": "tool_name", "params": {...}, "reason": "why"}
+Trả về array actions tối đa 3 actions, mỗi action có:
+{
+  "type": "check_balance" | "transfer_usdc" | "register_agent" | "create_job" | "get_block_info",
+  "params": { ... }
+}`;
 
-If no action needed, return: []`;
-
-    const messages = [
-      new SystemMessage(systemPrompt),
-      new HumanMessage(`Analyze treasury state and recommend actions.
-        
-Time: ${new Date().toISOString()}
-Balance: ${context.balanceFormatted} USDC
-Recent: ${JSON.stringify(context.recentActions.slice(-3))}`),
-    ];
+    const humanMessage = `Phân tích treasury và đề xuất actions ngay bây giờ.`;
 
     try {
-      const response = await this.model.invoke(messages);
-      const content = response.content as string;
-      
-      const jsonMatch = content.match(/\[[\s\S]*\]/);
-      if (jsonMatch) {
-        const actions = JSON.parse(jsonMatch[0]);
-        return actions.map((a: Record<string, unknown>) => ({
-          ...a,
-          success: false,
-          timestamp: new Date().toISOString(),
-        }));
+      const response = await this.model.invoke([
+        new SystemMessage(systemPrompt),
+        new HumanMessage(humanMessage),
+      ]);
+
+      // Parse JSON từ Claude
+      let actions: AgentAction[] = [];
+      const text = response.content as string;
+
+      try {
+        // Claude đôi khi trả JSON trong ```json
+        const jsonMatch = text.match(/```json\n([\s\S]*?)\n```/) || text.match(/\[[\s\S]*\]/);
+        actions = jsonMatch ? JSON.parse(jsonMatch[1] || jsonMatch[0]) : JSON.parse(text);
+      } catch {
+        actions = [];
       }
-      
-      return [];
+
+      return Array.isArray(actions) ? actions : [];
     } catch (error) {
-      console.error('[TreasuryAgent] Analysis failed:', error);
+      console.error('[TreasuryAgent] Analyze error:', error);
       return [];
     }
   }
 
   // ============================================
-  // ACTION EXECUTION
+  // EXECUTE ACTION VIA TOOLS
   // ============================================
 
   async executeAction(action: AgentAction): Promise<AgentAction> {
     console.log(`[TreasuryAgent] Executing: ${action.type}`);
-    
+
     try {
-      let result: string;
-      let txHash: Hash | undefined;
+      // LangChain tool call
+      const tool = this.tools.find(t => t.name === action.type);
+      if (!tool) throw new Error(`Tool ${action.type} not found`);
 
-      switch (action.type) {
-        case 'check_balance': {
-          const balance = await this.publicClient.readContract({
-            address: USDC_ADDRESS,
-            abi: USDC_ABI,
-            functionName: 'balanceOf',
-            args: [action.params.address as Address],
-          });
-          result = `Balance: ${formatUnits(balance, 6)} USDC`;
-          break;
-        }
-
-        case 'transfer_usdc': {
-          const { to, amount } = action.params;
-          txHash = await this.walletClient.writeContract({
-            chain: arcTestnet,
-            account: this.account,
-            address: USDC_ADDRESS,
-            abi: USDC_ABI,
-            functionName: 'transfer',
-            args: [to as Address, parseUnits(amount as string, 6)],
-          });
-          result = `Transferred ${amount} USDC to ${to}`;
-          break;
-        }
-
-        case 'register_agent': {
-          const { metadataURI } = action.params;
-          txHash = await this.walletClient.writeContract({
-            chain: arcTestnet,
-            account: this.account,
-            address: IDENTITY_REGISTRY,
-            abi: IDENTITY_REGISTRY_ABI,
-            functionName: 'register',
-            args: [metadataURI as string],
-          });
-          result = `Agent registered`;
-          break;
-        }
-
-        case 'create_job': {
-          const { provider, description, duration = 86400 } = action.params;
-          const expiredAt = Math.floor(Date.now() / 1000) + (duration as number);
-          txHash = await this.walletClient.writeContract({
-            chain: arcTestnet,
-            account: this.account,
-            address: AGENTIC_COMMERCE,
-            abi: AGENTIC_COMMERCE_ABI,
-            functionName: 'createJob',
-            args: [
-              provider as Address,
-              this.account.address,
-              BigInt(expiredAt),
-              (description as string) || 'AI Agent Job',
-              '0x0000000000000000000000000000000000000000' as Address,
-            ],
-          });
-          result = `Job created: ${description}`;
-          break;
-        }
-
-        case 'get_block_info': {
-          const block = await this.publicClient.getBlock();
-          result = `Block: ${block.number}, Timestamp: ${block.timestamp}`;
-          break;
-        }
-
-        default:
-          result = `Unknown action: ${action.type}`;
-      }
+      const input = action.params ? JSON.stringify(action.params) : '';
+      const result = await tool.invoke(input);
 
       const executedAction: AgentAction = {
         ...action,
         result,
-        txHash,
-        success: true,
+        success: result.includes('successful') || result.includes('registered') || result.includes('created'),
         timestamp: new Date().toISOString(),
       };
 
       this.actionHistory.push(executedAction);
       return executedAction;
-
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       const failedAction: AgentAction = {
@@ -429,63 +356,33 @@ Recent: ${JSON.stringify(context.recentActions.slice(-3))}`),
   }
 
   // ============================================
-  // MAIN RUN CYCLE WITH SAFETY CHECKS
+  // MAIN RUN CYCLE
   // ============================================
 
   async run(): Promise<AgentAction[]> {
-    console.log('[TreasuryAgent] Starting analysis cycle...');
-    const startTime = Date.now();
-    
-    // 1. Gather context
+    console.log(`[TreasuryAgent] 🚀 Starting treasury analysis cycle at ${new Date().toISOString()}`);
+
     const context = await this.gatherContext();
     console.log(`[TreasuryAgent] Balance: ${context.balanceFormatted} USDC`);
 
-    // 2. AI analysis
     const plannedActions = await this.analyze(context);
-    console.log(`[TreasuryAgent] AI recommended ${plannedActions.length} actions`);
-
-    // 3. Execute with safety checks
     const executed: AgentAction[] = [];
-    const maxActions = this.config.maxActionsPerCycle || 5;
-    const minBalance = parseUnits(this.config.balanceThreshold || '1.0', 6);
+    const maxActions = this.config.maxActionsPerCycle || 3;
 
     for (const action of plannedActions.slice(0, maxActions)) {
       if (executed.length >= maxActions) break;
 
-      // Safety check: balance too low for transfers
-      if (action.type === 'transfer_usdc' && context.balance < minBalance) {
-        console.warn('[TreasuryAgent] Safety: Balance too low for transfer, skipping');
-        executed.push({
-          ...action,
-          result: 'Skipped: Balance below threshold',
-          success: false,
-          timestamp: new Date().toISOString(),
-        });
+      // Safety guard
+      if (action.type === 'transfer_usdc' && context.balance < parseUnits('1', 6)) {
+        console.warn('[TreasuryAgent] Safety: Balance too low, skipping transfer');
         continue;
-      }
-
-      // Safety check: don't transfer more than 50% of balance
-      if (action.type === 'transfer_usdc') {
-        const amount = parseUnits((action.params.amount as string) || '0', 6);
-        if (amount > context.balance / BigInt(2)) {
-          console.warn('[TreasuryAgent] Safety: Transfer amount exceeds 50% of balance');
-          executed.push({
-            ...action,
-            result: 'Skipped: Amount exceeds 50% of balance',
-            success: false,
-            timestamp: new Date().toISOString(),
-          });
-          continue;
-        }
       }
 
       const result = await this.executeAction(action);
       executed.push(result);
     }
 
-    const duration = Date.now() - startTime;
-    console.log(`[TreasuryAgent] Cycle completed: ${executed.length} actions in ${duration}ms`);
-    
+    console.log(`[TreasuryAgent] ✅ Cycle completed: ${executed.length} actions executed`);
     return executed;
   }
 
@@ -493,19 +390,11 @@ Recent: ${JSON.stringify(context.recentActions.slice(-3))}`),
   // GETTERS
   // ============================================
 
-  getAddress(): Address {
-    return this.account.address;
-  }
-
   getActionHistory(): AgentAction[] {
     return [...this.actionHistory];
   }
 
-  getCurrentContext(): Promise<AgentContext> {
-    return this.gatherContext();
-  }
-
-  getTools(): Tool[] {
-    return [...this.tools];
+  getAgentAddress(): Address {
+    return this.account.address;
   }
 }

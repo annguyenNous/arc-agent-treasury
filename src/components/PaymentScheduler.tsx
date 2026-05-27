@@ -13,6 +13,7 @@ interface ScheduledPayment {
   frequency: string;
   label: string;
   nextPayment: string;
+  status: 'pending' | 'executed' | 'failed';
 }
 
 export default function PaymentScheduler() {
@@ -37,6 +38,7 @@ export default function PaymentScheduler() {
       frequency,
       label: label || 'Untitled Payment',
       nextPayment: getNextPaymentDate(frequency),
+      status: 'pending',
     };
     
     setPayments([...payments, newPayment]);
@@ -53,6 +55,11 @@ export default function PaymentScheduler() {
       functionName: 'transfer',
       args: [payment.recipient as `0x${string}`, parseUnits(payment.amount, 6)],
     });
+    
+    // Update payment status after execution
+    setPayments(prev => prev.map(p => 
+      p.id === payment.id ? { ...p, status: 'executed' as const } : p
+    ));
   };
 
   const getNextPaymentDate = (freq: string): string => {
@@ -158,12 +165,19 @@ export default function PaymentScheduler() {
               </div>
               <div className="text-right">
                 <p className="text-xs text-gray-500">Next: {payment.nextPayment}</p>
+                <span className={`inline-block mt-1 px-2 py-1 text-xs rounded-full ${
+                  payment.status === 'executed' ? 'bg-green-500/20 text-green-400' :
+                  payment.status === 'failed' ? 'bg-red-500/20 text-red-400' :
+                  'bg-yellow-500/20 text-yellow-400'
+                }`}>
+                  {payment.status}
+                </span>
                 <button
                   onClick={() => handleExecutePayment(payment)}
-                  disabled={isPending}
-                  className="mt-2 px-3 py-1 bg-violet-600 text-white text-xs rounded-lg hover:bg-violet-700 disabled:opacity-50"
+                  disabled={isPending || payment.status === 'executed'}
+                  className="block mt-2 px-3 py-1 bg-violet-600 text-white text-xs rounded-lg hover:bg-violet-700 disabled:opacity-50"
                 >
-                  Execute Now
+                  {isPending ? 'Executing...' : 'Execute Now'}
                 </button>
               </div>
             </div>
@@ -173,10 +187,12 @@ export default function PaymentScheduler() {
 
       {isSuccess && (
         <div className="mt-4 p-3 bg-green-500/10 border border-green-500/20 rounded-xl">
-          <p className="text-green-400 text-sm">Payment sent!</p>
-          <a href={`${EXPLORER_URL}/tx/${txHash}`} target="_blank" rel="noopener noreferrer" className="text-green-300 text-xs hover:underline">
-            View transaction →
-          </a>
+          <p className="text-green-400 text-sm">Payment sent successfully!</p>
+          {txHash && (
+            <a href={`${EXPLORER_URL}/tx/${txHash}`} target="_blank" rel="noopener noreferrer" className="text-green-300 text-xs hover:underline">
+              View transaction →
+            </a>
+          )}
         </div>
       )}
     </div>

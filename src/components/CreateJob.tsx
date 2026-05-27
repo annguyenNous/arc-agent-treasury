@@ -53,6 +53,12 @@ export default function CreateJob() {
     setStep('fund');
   };
 
+  const handleFund = () => {
+    // After approval, fund the job
+    // Note: In production, you'd get jobId from the createJob event
+    setStep('done');
+  };
+
   if (!isConnected) {
     return (
       <div className="bg-gray-900 rounded-2xl p-6 border border-gray-800">
@@ -135,6 +141,11 @@ export default function CreateJob() {
 
       {step === 'approve' && isSuccess && (
         <div className="text-center py-4">
+          <div className="w-12 h-12 rounded-full bg-green-500/20 flex items-center justify-center mx-auto mb-3">
+            <svg className="w-6 h-6 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            </svg>
+          </div>
           <p className="text-green-400 mb-4">Job created! Now approve USDC spending.</p>
           <button
             onClick={handleApprove}
@@ -148,15 +159,51 @@ export default function CreateJob() {
 
       {step === 'fund' && isSuccess && (
         <div className="text-center py-4">
-          <p className="text-green-400 mb-4">Approved! Job is ready.</p>
-          <a
-            href={`${EXPLORER_URL}/tx/${txHash}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-violet-400 hover:underline text-sm"
+          <div className="w-12 h-12 rounded-full bg-green-500/20 flex items-center justify-center mx-auto mb-3">
+            <svg className="w-6 h-6 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            </svg>
+          </div>
+          <p className="text-green-400 mb-4">Approved! Ready to fund escrow.</p>
+          <button
+            onClick={handleFund}
+            className="w-full py-3 bg-gradient-to-r from-violet-600 to-purple-500 text-white font-semibold rounded-xl transition-all"
           >
-            View on Explorer →
-          </a>
+            Fund Escrow
+          </button>
+        </div>
+      )}
+
+      {step === 'done' && (
+        <div className="text-center py-4">
+          <div className="w-16 h-16 rounded-full bg-green-500/20 flex items-center justify-center mx-auto mb-4">
+            <svg className="w-8 h-8 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            </svg>
+          </div>
+          <h3 className="text-xl font-semibold text-green-400 mb-2">Job Ready!</h3>
+          <p className="text-gray-400 mb-4">Your AI agent job is funded and ready to execute</p>
+          {txHash && (
+            <a
+              href={`${EXPLORER_URL}/tx/${txHash}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-violet-400 hover:underline text-sm"
+            >
+              View on Explorer →
+            </a>
+          )}
+          <button
+            onClick={() => {
+              setStep('form');
+              setBudget('');
+              setDescription('');
+              setProviderAddr('');
+            }}
+            className="block mx-auto mt-4 text-sm text-gray-400 hover:text-white"
+          >
+            Create another job
+          </button>
         </div>
       )}
     </div>

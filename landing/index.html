@@ -1,0 +1,1187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ArcAgent Treasury - AI-Powered Treasury on ARC Network</title>
+  <meta name="description" content="Autonomous AI agents managing payments, liquidity, and treasury on ARC Network. ERC-8004 identity, ERC-8183 jobs, USDC native gas.">
+  
+  <!-- Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  
+  <!-- Favicon -->
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🤖</text></svg>">
+  
+  <style>
+    /* ============================================
+       DESIGN SYSTEM: Linear-inspired Dark Theme
+       ============================================ */
+    
+    :root {
+      /* Backgrounds */
+      --bg-deep: #08090a;
+      --bg-panel: #0f1011;
+      --bg-surface: #191a1b;
+      --bg-elevated: #28282c;
+      
+      /* Text */
+      --text-primary: #f7f8f8;
+      --text-secondary: #d0d6e0;
+      --text-tertiary: #8a8f98;
+      --text-muted: #62666d;
+      
+      /* Brand - Violet/Purple (ARC Network) */
+      --brand-primary: #8b5cf6;
+      --brand-light: #a78bfa;
+      --brand-dark: #7c3aed;
+      --brand-glow: rgba(139, 92, 246, 0.15);
+      
+      /* Accent */
+      --accent-cyan: #06b6d4;
+      --accent-green: #10b981;
+      --accent-amber: #f59e0b;
+      
+      /* Borders */
+      --border-subtle: rgba(255, 255, 255, 0.05);
+      --border-default: rgba(255, 255, 255, 0.08);
+      --border-brand: rgba(139, 92, 246, 0.3);
+      
+      /* Shadows */
+      --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+      --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
+      --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.5);
+      --shadow-glow: 0 0 40px rgba(139, 92, 246, 0.15);
+    }
+    
+    /* ============================================
+       RESET & BASE
+       ============================================ */
+    
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    html {
+      scroll-behavior: smooth;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+    
+    body {
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      font-feature-settings: 'cv01', 'ss03';
+      color: var(--text-primary);
+      background: var(--bg-deep);
+      line-height: 1.5;
+      overflow-x: hidden;
+    }
+    
+    /* ============================================
+       TYPOGRAPHY
+       ============================================ */
+    
+    h1, h2, h3, h4, h5, h6 {
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      line-height: 1.1;
+    }
+    
+    .display-xl {
+      font-size: clamp(2.5rem, 6vw, 4.5rem);
+      font-weight: 600;
+      letter-spacing: -0.04em;
+      line-height: 1.05;
+    }
+    
+    .display-lg {
+      font-size: clamp(2rem, 4vw, 3rem);
+      font-weight: 600;
+      letter-spacing: -0.03em;
+      line-height: 1.1;
+    }
+    
+    .display-md {
+      font-size: clamp(1.5rem, 3vw, 2rem);
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      line-height: 1.2;
+    }
+    
+    .body-lg {
+      font-size: 1.125rem;
+      line-height: 1.6;
+      color: var(--text-secondary);
+    }
+    
+    .body-md {
+      font-size: 1rem;
+      line-height: 1.5;
+      color: var(--text-tertiary);
+    }
+    
+    .mono {
+      font-family: 'JetBrains Mono', ui-monospace, monospace;
+      font-size: 0.875rem;
+    }
+    
+    /* ============================================
+       LAYOUT
+       ============================================ */
+    
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 1.5rem;
+    }
+    
+    .section {
+      padding: 6rem 0;
+    }
+    
+    .section-header {
+      text-align: center;
+      max-width: 640px;
+      margin: 0 auto 4rem;
+    }
+    
+    .section-header .label {
+      display: inline-block;
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--brand-primary);
+      margin-bottom: 1rem;
+      padding: 0.25rem 0.75rem;
+      background: var(--brand-glow);
+      border: 1px solid var(--border-brand);
+      border-radius: 9999px;
+    }
+    
+    .grid {
+      display: grid;
+      gap: 1.5rem;
+    }
+    
+    .grid-2 { grid-template-columns: repeat(2, 1fr); }
+    .grid-3 { grid-template-columns: repeat(3, 1fr); }
+    .grid-4 { grid-template-columns: repeat(4, 1fr); }
+    
+    @media (max-width: 768px) {
+      .grid-2, .grid-3, .grid-4 {
+        grid-template-columns: 1fr;
+      }
+    }
+    
+    @media (min-width: 769px) and (max-width: 1024px) {
+      .grid-3, .grid-4 {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+    
+    /* ============================================
+       COMPONENTS
+       ============================================ */
+    
+    /* Navigation */
+    nav {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 100;
+      background: rgba(8, 9, 10, 0.8);
+      backdrop-filter: blur(20px);
+      border-bottom: 1px solid var(--border-subtle);
+    }
+    
+    .nav-inner {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 1.5rem;
+      height: 64px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    
+    .nav-logo {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      text-decoration: none;
+      color: var(--text-primary);
+    }
+    
+    .nav-logo-icon {
+      width: 32px;
+      height: 32px;
+      background: linear-gradient(135deg, var(--brand-primary), var(--accent-cyan));
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.25rem;
+    }
+    
+    .nav-logo-text {
+      font-size: 1rem;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+    }
+    
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 2rem;
+    }
+    
+    .nav-links a {
+      font-size: 0.875rem;
+      font-weight: 500;
+      color: var(--text-tertiary);
+      text-decoration: none;
+      transition: color 0.2s;
+    }
+    
+    .nav-links a:hover {
+      color: var(--text-primary);
+    }
+    
+    .nav-cta {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+    
+    /* Buttons */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.625rem 1.25rem;
+      font-size: 0.875rem;
+      font-weight: 500;
+      font-family: inherit;
+      border-radius: 8px;
+      text-decoration: none;
+      transition: all 0.2s;
+      cursor: pointer;
+      border: none;
+    }
+    
+    .btn-primary {
+      background: var(--brand-primary);
+      color: white;
+      box-shadow: 0 0 20px rgba(139, 92, 246, 0.3);
+    }
+    
+    .btn-primary:hover {
+      background: var(--brand-light);
+      box-shadow: 0 0 30px rgba(139, 92, 246, 0.4);
+      transform: translateY(-1px);
+    }
+    
+    .btn-secondary {
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--text-primary);
+      border: 1px solid var(--border-default);
+    }
+    
+    .btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.08);
+      border-color: rgba(255, 255, 255, 0.15);
+    }
+    
+    .btn-lg {
+      padding: 0.875rem 1.75rem;
+      font-size: 1rem;
+    }
+    
+    /* Cards */
+    .card {
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid var(--border-default);
+      border-radius: 12px;
+      padding: 1.5rem;
+      transition: all 0.3s;
+    }
+    
+    .card:hover {
+      background: rgba(255, 255, 255, 0.04);
+      border-color: rgba(255, 255, 255, 0.12);
+      transform: translateY(-2px);
+    }
+    
+    .card-icon {
+      width: 48px;
+      height: 48px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.5rem;
+      margin-bottom: 1rem;
+    }
+    
+    .card-icon.violet { background: rgba(139, 92, 246, 0.15); }
+    .card-icon.cyan { background: rgba(6, 182, 212, 0.15); }
+    .card-icon.green { background: rgba(16, 185, 129, 0.15); }
+    .card-icon.amber { background: rgba(245, 158, 11, 0.15); }
+    
+    .card h3 {
+      font-size: 1.125rem;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+      color: var(--text-primary);
+    }
+    
+    .card p {
+      font-size: 0.875rem;
+      line-height: 1.6;
+      color: var(--text-tertiary);
+    }
+    
+    /* Code Block */
+    .code-block {
+      background: var(--bg-panel);
+      border: 1px solid var(--border-default);
+      border-radius: 12px;
+      padding: 1.5rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.8125rem;
+      line-height: 1.7;
+      overflow-x: auto;
+      color: var(--text-secondary);
+    }
+    
+    .code-block .keyword { color: var(--brand-primary); }
+    .code-block .string { color: var(--accent-green); }
+    .code-block .comment { color: var(--text-muted); }
+    .code-block .function { color: var(--accent-cyan); }
+    .code-block .number { color: var(--accent-amber); }
+    
+    /* Badge */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.375rem;
+      padding: 0.25rem 0.75rem;
+      font-size: 0.75rem;
+      font-weight: 500;
+      border-radius: 9999px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border-default);
+      color: var(--text-secondary);
+    }
+    
+    .badge-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--accent-green);
+      animation: pulse 2s infinite;
+    }
+    
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+    
+    /* Stats */
+    .stat {
+      text-align: center;
+    }
+    
+    .stat-value {
+      font-size: 2.5rem;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      color: var(--text-primary);
+      line-height: 1;
+    }
+    
+    .stat-label {
+      font-size: 0.875rem;
+      color: var(--text-tertiary);
+      margin-top: 0.5rem;
+    }
+    
+    /* Step */
+    .step {
+      display: flex;
+      gap: 1.5rem;
+      align-items: flex-start;
+    }
+    
+    .step-number {
+      width: 40px;
+      height: 40px;
+      min-width: 40px;
+      border-radius: 50%;
+      background: var(--brand-glow);
+      border: 1px solid var(--border-brand);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--brand-primary);
+    }
+    
+    .step-content h3 {
+      font-size: 1.125rem;
+      font-weight: 600;
+      margin-bottom: 0.375rem;
+    }
+    
+    .step-content p {
+      font-size: 0.875rem;
+      color: var(--text-tertiary);
+      line-height: 1.6;
+    }
+    
+    /* ============================================
+       HERO SECTION
+       ============================================ */
+    
+    .hero {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      position: relative;
+      overflow: hidden;
+      padding-top: 64px;
+    }
+    
+    .hero::before {
+      content: '';
+      position: absolute;
+      top: -50%;
+      left: -50%;
+      width: 200%;
+      height: 200%;
+      background: radial-gradient(circle at 30% 50%, rgba(139, 92, 246, 0.08) 0%, transparent 50%),
+                  radial-gradient(circle at 70% 50%, rgba(6, 182, 212, 0.05) 0%, transparent 50%);
+      animation: heroGlow 15s ease-in-out infinite;
+    }
+    
+    @keyframes heroGlow {
+      0%, 100% { transform: translate(0, 0); }
+      50% { transform: translate(-5%, 5%); }
+    }
+    
+    .hero-content {
+      position: relative;
+      z-index: 1;
+      text-align: center;
+      max-width: 800px;
+      margin: 0 auto;
+    }
+    
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.375rem 1rem;
+      background: rgba(139, 92, 246, 0.1);
+      border: 1px solid var(--border-brand);
+      border-radius: 9999px;
+      font-size: 0.8125rem;
+      font-weight: 500;
+      color: var(--brand-light);
+      margin-bottom: 2rem;
+    }
+    
+    .hero-title {
+      margin-bottom: 1.5rem;
+    }
+    
+    .hero-title .gradient {
+      background: linear-gradient(135deg, var(--brand-light) 0%, var(--accent-cyan) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    
+    .hero-subtitle {
+      font-size: 1.25rem;
+      line-height: 1.6;
+      color: var(--text-tertiary);
+      max-width: 600px;
+      margin: 0 auto 2.5rem;
+    }
+    
+    .hero-actions {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 1rem;
+      margin-bottom: 4rem;
+    }
+    
+    .hero-stats {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 3rem;
+      padding-top: 3rem;
+      border-top: 1px solid var(--border-subtle);
+    }
+    
+    /* ============================================
+       FEATURES SECTION
+       ============================================ */
+    
+    .features {
+      background: var(--bg-panel);
+      border-top: 1px solid var(--border-subtle);
+      border-bottom: 1px solid var(--border-subtle);
+    }
+    
+    /* ============================================
+       HOW IT WORKS
+       ============================================ */
+    
+    .how-it-works {
+      position: relative;
+    }
+    
+    .steps-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 2rem;
+    }
+    
+    @media (max-width: 768px) {
+      .steps-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+    
+    .step-card {
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid var(--border-default);
+      border-radius: 12px;
+      padding: 2rem;
+      position: relative;
+    }
+    
+    .step-card::before {
+      content: attr(data-step);
+      position: absolute;
+      top: -12px;
+      left: 24px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--brand-primary);
+      background: var(--bg-deep);
+      padding: 0 0.5rem;
+    }
+    
+    /* ============================================
+       ARCHITECTURE
+       ============================================ */
+    
+    .arch-diagram {
+      background: var(--bg-panel);
+      border: 1px solid var(--border-default);
+      border-radius: 16px;
+      padding: 3rem;
+      position: relative;
+      overflow: hidden;
+    }
+    
+    .arch-layers {
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+    }
+    
+    .arch-layer {
+      display: flex;
+      align-items: center;
+      gap: 1.5rem;
+    }
+    
+    .arch-layer-label {
+      min-width: 120px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--text-muted);
+      text-align: right;
+    }
+    
+    .arch-layer-content {
+      flex: 1;
+      display: flex;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+    
+    .arch-node {
+      padding: 0.75rem 1.25rem;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--border-default);
+      border-radius: 8px;
+      font-size: 0.8125rem;
+      font-weight: 500;
+      color: var(--text-secondary);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    
+    .arch-node.highlight {
+      border-color: var(--border-brand);
+      background: var(--brand-glow);
+      color: var(--brand-light);
+    }
+    
+    .arch-connector {
+      width: 2px;
+      height: 24px;
+      background: var(--border-default);
+      margin-left: 136px;
+    }
+    
+    /* ============================================
+       CONTRACTS SECTION
+       ============================================ */
+    
+    .contracts-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 1rem;
+    }
+    
+    @media (max-width: 768px) {
+      .contracts-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+    
+    .contract-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 1rem 1.25rem;
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid var(--border-default);
+      border-radius: 8px;
+    }
+    
+    .contract-name {
+      font-size: 0.875rem;
+      font-weight: 500;
+      color: var(--text-secondary);
+    }
+    
+    .contract-addr {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.75rem;
+      color: var(--brand-light);
+    }
+    
+    /* ============================================
+       CTA SECTION
+       ============================================ */
+    
+    .cta {
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+    }
+    
+    .cta::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: radial-gradient(circle at 50% 50%, rgba(139, 92, 246, 0.1) 0%, transparent 70%);
+    }
+    
+    .cta-content {
+      position: relative;
+      z-index: 1;
+    }
+    
+    /* ============================================
+       FOOTER
+       ============================================ */
+    
+    footer {
+      border-top: 1px solid var(--border-subtle);
+      padding: 3rem 0;
+    }
+    
+    .footer-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+    
+    .footer-links {
+      display: flex;
+      gap: 2rem;
+    }
+    
+    .footer-links a {
+      font-size: 0.8125rem;
+      color: var(--text-muted);
+      text-decoration: none;
+      transition: color 0.2s;
+    }
+    
+    .footer-links a:hover {
+      color: var(--text-secondary);
+    }
+    
+    /* ============================================
+       ANIMATIONS
+       ============================================ */
+    
+    @keyframes fadeInUp {
+      from {
+        opacity: 0;
+        transform: translateY(20px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+    
+    .animate {
+      opacity: 0;
+      animation: fadeInUp 0.6s ease forwards;
+    }
+    
+    .delay-1 { animation-delay: 0.1s; }
+    .delay-2 { animation-delay: 0.2s; }
+    .delay-3 { animation-delay: 0.3s; }
+    .delay-4 { animation-delay: 0.4s; }
+    .delay-5 { animation-delay: 0.5s; }
+    
+    /* ============================================
+       RESPONSIVE
+       ============================================ */
+    
+    @media (max-width: 768px) {
+      .nav-links {
+        display: none;
+      }
+      
+      .hero-stats {
+        flex-direction: column;
+        gap: 1.5rem;
+      }
+      
+      .hero-actions {
+        flex-direction: column;
+      }
+      
+      .section {
+        padding: 4rem 0;
+      }
+      
+      .arch-layer {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+      
+      .arch-layer-label {
+        text-align: left;
+        min-width: auto;
+      }
+      
+      .arch-connector {
+        margin-left: 20px;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Navigation -->
+  <nav>
+    <div class="nav-inner">
+      <a href="#" class="nav-logo">
+        <div class="nav-logo-icon">🤖</div>
+        <span class="nav-logo-text">ArcAgent Treasury</span>
+      </a>
+      
+      <div class="nav-links">
+        <a href="#features">Features</a>
+        <a href="#how-it-works">How It Works</a>
+        <a href="#architecture">Architecture</a>
+        <a href="#contracts">Contracts</a>
+      </div>
+      
+      <div class="nav-cta">
+        <a href="https://github.com/annguyenNous/arc-agent-treasury" target="_blank" class="btn btn-secondary">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+            <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
+          </svg>
+          GitHub
+        </a>
+        <a href="https://faucet.circle.com" target="_blank" class="btn btn-primary">Get Test USDC</a>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Hero Section -->
+  <section class="hero">
+    <div class="container">
+      <div class="hero-content">
+        <div class="hero-badge animate">
+          <span class="badge-dot"></span>
+          Built on ARC Network
+        </div>
+        
+        <h1 class="display-xl hero-title animate delay-1">
+          <span class="gradient">AI-Powered Treasury</span><br>
+          on ARC Network
+        </h1>
+        
+        <p class="hero-subtitle animate delay-2">
+          Autonomous AI agents managing your payments, liquidity, and treasury.
+          Sub-second finality. USDC native gas. ERC-8004 identity.
+        </p>
+        
+        <div class="hero-actions animate delay-3">
+          <a href="https://github.com/annguyenNous/arc-agent-treasury" target="_blank" class="btn btn-primary btn-lg">
+            Start Building →
+          </a>
+          <a href="#how-it-works" class="btn btn-secondary btn-lg">
+            Learn More
+          </a>
+        </div>
+        
+        <div class="hero-stats animate delay-4">
+          <div class="stat">
+            <div class="stat-value" style="color: var(--brand-primary)">5</div>
+            <div class="stat-label">Agent Types</div>
+          </div>
+          <div class="stat">
+            <div class="stat-value" style="color: var(--accent-cyan)">&lt;1s</div>
+            <div class="stat-label">Finality</div>
+          </div>
+          <div class="stat">
+            <div class="stat-value" style="color: var(--accent-green)">2</div>
+            <div class="stat-label">ERC Standards</div>
+          </div>
+          <div class="stat">
+            <div class="stat-value" style="color: var(--accent-amber)">∞</div>
+            <div class="stat-label">Possibilities</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Features Section -->
+  <section id="features" class="section features">
+    <div class="container">
+      <div class="section-header">
+        <span class="label">Features</span>
+        <h2 class="display-lg">Everything you need for<br>autonomous treasury</h2>
+        <p class="body-lg" style="margin-top: 1rem;">
+          Built with ERC-8004 agent identity and ERC-8183 job marketplace on ARC Network.
+        </p>
+      </div>
+      
+      <div class="grid grid-3">
+        <div class="card">
+          <div class="card-icon violet">🤖</div>
+          <h3>ERC-8004 Agent Identity</h3>
+          <p>Register AI agents with onchain NFT identity. Track reputation, validate credentials, build trust through verified onchain history.</p>
+        </div>
+        
+        <div class="card">
+          <div class="card-icon cyan">📋</div>
+          <h3>ERC-8183 Job Marketplace</h3>
+          <p>Create escrow-based jobs for AI agents. Fund, execute, submit deliverables, and settle payments automatically.</p>
+        </div>
+        
+        <div class="card">
+          <div class="card-icon green">💸</div>
+          <h3>Automated Payments</h3>
+          <p>Schedule recurring USDC payments for bills, payroll, and treasury operations. Agents execute on schedule.</p>
+        </div>
+        
+        <div class="card">
+          <div class="card-icon amber">📊</div>
+          <h3>Arbitrage & Liquidity</h3>
+          <p>AI agents monitor rates across DEXs, execute arbitrage, and optimize liquidity positions automatically.</p>
+        </div>
+        
+        <div class="card">
+          <div class="card-icon violet">⚡</div>
+          <h3>Sub-Second Finality</h3>
+          <p>ARC Network confirms transactions in under 1 second. Perfect for real-time treasury operations and high-frequency strategies.</p>
+        </div>
+        
+        <div class="card">
+          <div class="card-icon cyan">🔗</div>
+          <h3>Cross-Chain via CCTP</h3>
+          <p>Bridge USDC across chains using Circle's CCTP. Unified balance management across multiple networks.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- How It Works -->
+  <section id="how-it-works" class="section how-it-works">
+    <div class="container">
+      <div class="section-header">
+        <span class="label">How It Works</span>
+        <h2 class="display-lg">Three steps to<br>autonomous treasury</h2>
+      </div>
+      
+      <div class="steps-grid">
+        <div class="step-card" data-step="Step 1">
+          <div class="step-number">1</div>
+          <div class="step-content" style="margin-top: 1rem;">
+            <h3>Register Your Agent</h3>
+            <p>Create an AI agent with onchain identity via ERC-8004. Define capabilities, set metadata, and build reputation over time.</p>
+          </div>
+        </div>
+        
+        <div class="step-card" data-step="Step 2">
+          <div class="step-number">2</div>
+          <div class="step-content" style="margin-top: 1rem;">
+            <h3>Create Jobs & Schedule</h3>
+            <p>Define what your agent should do: pay bills, manage liquidity, execute arbitrage. Set budgets and schedules.</p>
+          </div>
+        </div>
+        
+        <div class="step-card" data-step="Step 3">
+          <div class="step-number">3</div>
+          <div class="step-content" style="margin-top: 1rem;">
+            <h3>Autonomous Execution</h3>
+            <p>Agents execute tasks autonomously. Funds are held in escrow, deliverables are verified, payments settle automatically.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Architecture -->
+  <section id="architecture" class="section">
+    <div class="container">
+      <div class="section-header">
+        <span class="label">Architecture</span>
+        <h2 class="display-lg">Built on proven standards</h2>
+      </div>
+      
+      <div class="arch-diagram">
+        <div class="arch-layers">
+          <div class="arch-layer">
+            <div class="arch-layer-label">Application</div>
+            <div class="arch-layer-content">
+              <div class="arch-node">📊 Dashboard</div>
+              <div class="arch-node">🤖 Agent Manager</div>
+              <div class="arch-node">📋 Job Creator</div>
+              <div class="arch-node">💸 Payment Scheduler</div>
+            </div>
+          </div>
+          
+          <div class="arch-connector"></div>
+          
+          <div class="arch-layer">
+            <div class="arch-layer-label">Protocol</div>
+            <div class="arch-layer-content">
+              <div class="arch-node highlight">ERC-8004 Identity</div>
+              <div class="arch-node highlight">ERC-8183 Jobs</div>
+              <div class="arch-node">CCTP Bridge</div>
+            </div>
+          </div>
+          
+          <div class="arch-connector"></div>
+          
+          <div class="arch-layer">
+            <div class="arch-layer-label">Network</div>
+            <div class="arch-layer-content">
+              <div class="arch-node highlight">ARC L1 (Chain ID: 5042002)</div>
+              <div class="arch-node">USDC Native Gas</div>
+              <div class="arch-node">&lt;1s Finality</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Contracts -->
+  <section id="contracts" class="section" style="background: var(--bg-panel); border-top: 1px solid var(--border-subtle);">
+    <div class="container">
+      <div class="section-header">
+        <span class="label">Contracts</span>
+        <h2 class="display-lg">Deployed on ARC Testnet</h2>
+        <p class="body-lg" style="margin-top: 1rem;">
+          All contracts are live on ARC Testnet. Verified and open source.
+        </p>
+      </div>
+      
+      <div class="contracts-grid">
+        <div class="contract-item">
+          <div>
+            <div class="contract-name">Identity Registry</div>
+            <div class="contract-addr">0x8004A818BFB912233c491871b3d84c89A494BD9e</div>
+          </div>
+          <span class="badge">ERC-8004</span>
+        </div>
+        
+        <div class="contract-item">
+          <div>
+            <div class="contract-name">Reputation Registry</div>
+            <div class="contract-addr">0x8004B663056A597Dffe9eCcC1965A193B7388713</div>
+          </div>
+          <span class="badge">ERC-8004</span>
+        </div>
+        
+        <div class="contract-item">
+          <div>
+            <div class="contract-name">Validation Registry</div>
+            <div class="contract-addr">0x8004Cb1BF31DAf7788923b405b754f57acEB4272</div>
+          </div>
+          <span class="badge">ERC-8004</span>
+        </div>
+        
+        <div class="contract-item">
+          <div>
+            <div class="contract-name">Agentic Commerce</div>
+            <div class="contract-addr">0x0747EEf0706327138c69792bF28Cd525089e4583</div>
+          </div>
+          <span class="badge">ERC-8183</span>
+        </div>
+        
+        <div class="contract-item">
+          <div>
+            <div class="contract-name">USDC (Native)</div>
+            <div class="contract-addr">0x3600000000000000000000000000000000000000</div>
+          </div>
+          <span class="badge">Gas Token</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Code Example -->
+  <section class="section">
+    <div class="container">
+      <div class="section-header">
+        <span class="label">Quick Start</span>
+        <h2 class="display-lg">Start in minutes</h2>
+      </div>
+      
+      <div class="code-block">
+        <pre><span class="comment"># Clone and install</span>
+<span class="keyword">git</span> clone https://github.com/annguyenNous/arc-agent-treasury.git
+<span class="keyword">cd</span> arc-agent-treasury
+<span class="keyword">npm</span> install
+
+<span class="comment"># Configure environment</span>
+<span class="keyword">cp</span> .env.example .env.local
+
+<span class="comment"># Start development</span>
+<span class="keyword">npm</span> run dev
+
+<span class="comment"># Register an agent via ERC-8004</span>
+<span class="keyword">await</span> <span class="function">writeContract</span>({
+  address: <span class="string">IDENTITY_REGISTRY</span>,
+  functionName: <span class="string">'register'</span>,
+  args: [<span class="string">'ipfs://metadata-uri'</span>]
+})</pre>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA Section -->
+  <section class="section cta">
+    <div class="container">
+      <div class="cta-content">
+        <h2 class="display-lg" style="margin-bottom: 1rem;">
+          Ready to build the future<br>of treasury management?
+        </h2>
+        <p class="body-lg" style="max-width: 500px; margin: 0 auto 2rem;">
+          Join the agentic economy on ARC Network. Build AI agents that manage money autonomously.
+        </p>
+        <div style="display: flex; gap: 1rem; justify-content: center;">
+          <a href="https://github.com/annguyenNous/arc-agent-treasury" target="_blank" class="btn btn-primary btn-lg">
+            View on GitHub →
+          </a>
+          <a href="https://docs.arc.io/build" target="_blank" class="btn btn-secondary btn-lg">
+            ARC Documentation
+          </a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer>
+    <div class="container">
+      <div class="footer-inner">
+        <div style="display: flex; align-items: center; gap: 0.75rem;">
+          <div class="nav-logo-icon" style="width: 28px; height: 28px; font-size: 1rem;">🤖</div>
+          <span style="font-size: 0.875rem; font-weight: 500;">ArcAgent Treasury</span>
+        </div>
+        
+        <div class="footer-links">
+          <a href="https://github.com/annguyenNous/arc-agent-treasury" target="_blank">GitHub</a>
+          <a href="https://docs.arc.io" target="_blank">ARC Docs</a>
+          <a href="https://testnet.arcscan.app" target="_blank">Explorer</a>
+          <a href="https://faucet.circle.com" target="_blank">Faucet</a>
+        </div>
+        
+        <div style="font-size: 0.75rem; color: var(--text-muted);">
+          Built on ARC Network · Powered by Circle
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Scroll Animation Script -->
+  <script>
+    // Intersection Observer for scroll animations
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          entry.target.style.opacity = '1';
+          entry.target.style.transform = 'translateY(0)';
+        }
+      });
+    }, { threshold: 0.1 });
+    
+    // Observe all cards and sections
+    document.querySelectorAll('.card, .step-card, .contract-item, .arch-node').forEach(el => {
+      el.style.opacity = '0';
+      el.style.transform = 'translateY(20px)';
+      el.style.transition = 'opacity 0.6s ease, transform 0.6s ease';
+      observer.observe(el);
+    });
+    
+    // Smooth scroll for anchor links
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+      anchor.addEventListener('click', function (e) {
+        e.preventDefault();
+        const target = document.querySelector(this.getAttribute('href'));
+        if (target) {
+          target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      });
+    });
+  </script>
+
+</body>
+</html>

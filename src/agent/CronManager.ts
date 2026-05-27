@@ -1,4 +1,5 @@
 import { TreasuryAgent, type AgentAction, type AgentConfig } from './TreasuryAgent';
+import { nodeCron, type ScheduledTask } from 'node-cron';
 
 // ============================================
 // TYPES
@@ -20,11 +21,11 @@ export interface JobStatus {
 }
 
 // ============================================
-// CRON MANAGER
+// CRON MANAGER WITH NODE-CRON
 // ============================================
 
 export class CronManager {
-  private jobs: Map<string, NodeJS.Timeout> = new Map();
+  private jobs: Map<string, ScheduledTask> = new Map();
   private agents: Map<string, TreasuryAgent> = new Map();
   private configs: Map<string, CronConfig> = new Map();
   private runCounts: Map<string, number> = new Map();
@@ -61,19 +62,27 @@ export class CronManager {
       return;
     }
 
-    const interval = setInterval(async () => {
-      await this.executeJob(id);
-    }, config.intervalMs);
+    // Convert intervalMs to cron expression
+    const intervalMinutes = Math.max(1, Math.floor(config.intervalMs / 60000));
+    const cronExpression = `*/${intervalMinutes} * * * *`;
 
-    this.jobs.set(id, interval);
-    this.running.set(id, true);
-    console.log(`[CronManager] Started job: ${id}`);
+    const task = nodeCron.schedule(cronExpression, async () => {
+      await this.executeJob(id);
+    }, {
+      timezone: 'Asia/Ho_Chi_Minh', // Vietnam timezone
+    });
+
+    if (task) {
+      this.jobs.set(id, task);
+      this.running.set(id, true);
+      console.log(`[CronManager] Started job ${id} with cron: ${cronExpression}`);
+    }
   }
 
   stopJob(id: string): void {
-    const interval = this.jobs.get(id);
-    if (interval) {
-      clearInterval(interval);
+    const task = this.jobs.get(id);
+    if (task) {
+      task.stop();
       this.jobs.delete(id);
     }
     this.running.set(id, false);
@@ -107,7 +116,7 @@ export class CronManager {
 
     // Check max runs
     if (config.maxRuns && runCount >= config.maxRuns) {
-      console.log(`[CronManager] Job ${id} reached max runs (${config.maxRuns})`);
+      console.log(`[CronManager] Job ${id} reached max runs (${config.maxRuns}), stopping`);
       this.stopJob(id);
       return;
     }

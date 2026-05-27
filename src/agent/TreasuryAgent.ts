@@ -32,7 +32,7 @@ export interface AgentConfig {
   privateKey: `0x${string}`;
   anthropicApiKey?: string;
   maxActionsPerCycle?: number;
-  balanceThreshold?: string;
+  balanceThreshold?: string; // Minimum USDC balance to allow transfers
 }
 
 // ============================================
@@ -230,7 +230,6 @@ export class TreasuryAgent {
       transport: http(),
     });
 
-    // Initialize tools with account
     this.tools = [
       new CheckBalanceTool(this.publicClient),
       new TransferUSDCTool(this.walletClient, this.account),
@@ -280,11 +279,13 @@ CURRENT STATE:
 - Wallet: ${context.address}
 - Balance: ${context.balanceFormatted} USDC
 - Network: ${context.network} (Chain ID: ${context.chainId})
+- Threshold: ${this.config.balanceThreshold} USDC minimum
 
-RULES:
-1. Always verify sufficient balance before transfers
-2. Never transfer more than 50% of balance in one action
-3. Log all actions for audit trail
+SAFETY RULES:
+1. NEVER transfer if balance < ${this.config.balanceThreshold} USDC
+2. NEVER transfer more than 50% of balance in one action
+3. Always check balance before transfers
+4. Prefer small test transfers first
 
 Respond with a JSON array of actions. Each action:
 {"type": "tool_name", "params": {...}, "reason": "why"}
@@ -418,7 +419,7 @@ Recent: ${JSON.stringify(context.recentActions.slice(-3))}`),
       const message = error instanceof Error ? error.message : 'Unknown error';
       const failedAction: AgentAction = {
         ...action,
-        result: `Failed: ${message}`,
+        result: `Execution failed: ${message}`,
         success: false,
         timestamp: new Date().toISOString(),
       };
@@ -428,38 +429,64 @@ Recent: ${JSON.stringify(context.recentActions.slice(-3))}`),
   }
 
   // ============================================
-  // FULL AGENT CYCLE
+  // MAIN RUN CYCLE WITH SAFETY CHECKS
   // ============================================
 
   async run(): Promise<AgentAction[]> {
-    console.log('[TreasuryAgent] Starting cycle...');
+    console.log('[TreasuryAgent] Starting analysis cycle...');
     const startTime = Date.now();
-
+    
+    // 1. Gather context
     const context = await this.gatherContext();
     console.log(`[TreasuryAgent] Balance: ${context.balanceFormatted} USDC`);
 
-    const actions = await this.analyze(context);
-    console.log(`[TreasuryAgent] AI recommended ${actions.length} actions`);
+    // 2. AI analysis
+    const plannedActions = await this.analyze(context);
+    console.log(`[TreasuryAgent] AI recommended ${plannedActions.length} actions`);
 
+    // 3. Execute with safety checks
+    const executed: AgentAction[] = [];
     const maxActions = this.config.maxActionsPerCycle || 5;
-    const actionsToExecute = actions.slice(0, maxActions);
-    
-    const results: AgentAction[] = [];
-    for (const action of actionsToExecute) {
-      const result = await this.executeAction(action);
-      results.push(result);
-      
-      if (result.success) {
-        console.log(`[TreasuryAgent] ✓ ${result.type}: ${result.result}`);
-      } else {
-        console.error(`[TreasuryAgent] ✗ ${result.type}: ${result.result}`);
+    const minBalance = parseUnits(this.config.balanceThreshold || '1.0', 6);
+
+    for (const action of plannedActions.slice(0, maxActions)) {
+      if (executed.length >= maxActions) break;
+
+      // Safety check: balance too low for transfers
+      if (action.type === 'transfer_usdc' && context.balance < minBalance) {
+        console.warn('[TreasuryAgent] Safety: Balance too low for transfer, skipping');
+        executed.push({
+          ...action,
+          result: 'Skipped: Balance below threshold',
+          success: false,
+          timestamp: new Date().toISOString(),
+        });
+        continue;
       }
+
+      // Safety check: don't transfer more than 50% of balance
+      if (action.type === 'transfer_usdc') {
+        const amount = parseUnits((action.params.amount as string) || '0', 6);
+        if (amount > context.balance / BigInt(2)) {
+          console.warn('[TreasuryAgent] Safety: Transfer amount exceeds 50% of balance');
+          executed.push({
+            ...action,
+            result: 'Skipped: Amount exceeds 50% of balance',
+            success: false,
+            timestamp: new Date().toISOString(),
+          });
+          continue;
+        }
+      }
+
+      const result = await this.executeAction(action);
+      executed.push(result);
     }
 
     const duration = Date.now() - startTime;
-    console.log(`[TreasuryAgent] Cycle complete in ${duration}ms`);
-
-    return results;
+    console.log(`[TreasuryAgent] Cycle completed: ${executed.length} actions in ${duration}ms`);
+    
+    return executed;
   }
 
   // ============================================
@@ -472,6 +499,10 @@ Recent: ${JSON.stringify(context.recentActions.slice(-3))}`),
 
   getActionHistory(): AgentAction[] {
     return [...this.actionHistory];
+  }
+
+  getCurrentContext(): Promise<AgentContext> {
+    return this.gatherContext();
   }
 
   getTools(): Tool[] {

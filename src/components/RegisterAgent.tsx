@@ -15,117 +15,67 @@ const AGENT_TYPES = [
   { value: 'billing', label: 'Billing Agent', desc: 'Invoice processing and payments' },
 ];
 
-// Registration steps
-type Step = 'form' | 'identity' | 'treasury' | 'done';
-
 export default function RegisterAgent() {
   const { isConnected } = useAccount();
   const [name, setName] = useState('');
   const [agentType, setAgentType] = useState('treasury');
   const [description, setDescription] = useState('');
   const [metadataURI, setMetadataURI] = useState('');
-  const [budget, setBudget] = useState('');
-  const [step, setStep] = useState<Step>('form');
-  const [identityTokenId, setIdentityTokenId] = useState<bigint | null>(null);
-  const [identityTxHash, setIdentityTxHash] = useState<string | null>(null);
-  const [treasuryTxHash, setTreasuryTxHash] = useState<string | null>(null);
+  const [step, setStep] = useState<'form' | 'submitting' | 'done'>('form');
+  const [txHash, setTxHash] = useState<string | null>(null);
+  const [tokenId, setTokenId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  // Step 1: Register on ERC-8004 Identity Registry
-  const {
-    writeContract: writeIdentity,
-    data: identityHash,
-    isPending: isIdentityPending,
-    error: identityError,
-  } = useWriteContract();
+  const { writeContract, data: hash, isPending, error: writeError } = useWriteContract();
+  const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
 
-  const { isLoading: isIdentityConfirming, isSuccess: isIdentitySuccess } =
-    useWaitForTransactionReceipt({ hash: identityHash });
+  // When TX confirms, try to detect tokenId from logs
+  useEffect(() => {
+    if (isSuccess && hash) {
+      setTxHash(hash);
+      // Try to get tokenId from ArcScan API
+      fetch(`https://testnet.arcscan.app/api/v2/transactions/${hash}/logs`)
+        .then((r) => r.json())
+        .then((data) => {
+          const items = data.items || [];
+          // Find Transfer event from zero address (mint)
+          const transferLog = items.find(
+            (log: { topics?: string[] }) =>
+              log.topics &&
+              log.topics[0] === '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef' &&
+              log.topics[1] === '0x0000000000000000000000000000000000000000000000000000000000000000'
+          );
+          if (transferLog && transferLog.topics[3]) {
+            setTokenId(BigInt(transferLog.topics[3]).toString());
+          }
+          setStep('done');
+        })
+        .catch(() => {
+          setStep('done');
+        });
+    }
+  }, [isSuccess, hash]);
 
-  // Step 2: Register on AgentTreasury
-  const {
-    writeContract: writeTreasury,
-    data: treasuryHash,
-    isPending: isTreasuryPending,
-    error: treasuryError,
-    reset: resetTreasury,
-  } = useWriteContract();
+  // Show write errors
+  useEffect(() => {
+    if (writeError) {
+      setError(writeError.message?.slice(0, 200) || 'Transaction failed');
+      setStep('form');
+    }
+  }, [writeError]);
 
-  const { isLoading: isTreasuryConfirming, isSuccess: isTreasurySuccess } =
-    useWaitForTransactionReceipt({ hash: treasuryHash });
-
-  const getCapabilities = (type: string): string[] => {
-    const caps: Record<string, string[]> = {
-      treasury: ['balance_monitoring', 'auto_rebalance', 'risk_assessment'],
-      payment: ['invoice_processing', 'scheduled_payments', 'receipt_tracking'],
-      arbitrage: ['rate_monitoring', 'cross_dex_arbitrage', 'profit_optimization'],
-      liquidity: ['lp_management', 'yield_farming', 'impermanent_loss_hedging'],
-      billing: ['invoice_processing', 'automated_payments', 'receipt_generation'],
-    };
-    return caps[type] || [];
-  };
-
-  // Step 1: Register identity on ERC-8004
-  const handleRegisterIdentity = () => {
-    const uri = metadataURI || `ipfs://bafkreib${Date.now()}`;
-    setStep('identity');
-    writeIdentity({
+  const handleRegister = () => {
+    if (!name.trim()) return;
+    setError(null);
+    setStep('submitting');
+    const uri = metadataURI || `ipfs://bafkrei${Date.now()}`;
+    writeContract({
       address: IDENTITY_REGISTRY,
       abi: IDENTITY_REGISTRY_ABI,
       functionName: 'register',
       args: [uri],
     });
   };
-
-  // When identity tx confirms, extract token ID and proceed to step 2
-  // The ERC-8004 register() returns a tokenId. We parse it from the tx receipt.
-  // For now, we use the tx hash to track and auto-advance.
-
-  // Step 2: Register on AgentTreasury with budget
-  const handleRegisterTreasury = (tokenId: bigint) => {
-    if (!budget || parseFloat(budget) <= 0) return;
-    setStep('treasury');
-    setIdentityTokenId(tokenId);
-    writeTreasury({
-      address: AGENT_TREASURY,
-      abi: TREASURY_ABI,
-      functionName: 'registerAgent',
-      args: [tokenId, name, agentType, parseUnits(budget, 6)],
-    });
-  };
-
-  // Auto-advance: when identity TX confirms, parse tokenId and move to step 2
-  useEffect(() => {
-    if (isIdentitySuccess && step === 'identity' && identityHash) {
-      setIdentityTxHash(identityHash);
-
-      // Try to parse tokenId from Transfer event in receipt logs
-      // ERC-8004 register() emits Transfer(address(0), owner, tokenId)
-      // The tokenId is in the 3rd topic (indexed param)
-      // Blockscout v2 API: /api/v2/transactions/{hash}/logs
-      fetch(`https://testnet.arcscan.app/api/v2/transactions/${identityHash}/logs`)
-        .then((r) => r.json())
-        .then((data) => {
-          const items = data.items || [];
-          if (items.length > 0) {
-            // Find Transfer event (topic[0] = keccak256("Transfer(address,address,uint256)"))
-            const transferLog = items.find(
-              (log: { topics: string[] }) =>
-                log.topics && log.topics[0] === '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef'
-            );
-            if (transferLog && transferLog.topics[3]) {
-              const tokenId = BigInt(transferLog.topics[3]);
-              setIdentityTokenId(tokenId);
-            }
-          }
-        })
-        .catch(() => {
-          // If API fails, user can enter tokenId manually
-          console.log('Could not auto-detect tokenId. Enter manually.');
-        });
-
-      setStep('treasury');
-    }
-  }, [isIdentitySuccess, step, identityHash]);
 
   if (!isConnected) {
     return (
@@ -137,52 +87,47 @@ export default function RegisterAgent() {
   }
 
   // Done state
-  if (step === 'done' || (isTreasurySuccess && treasuryHash)) {
+  if (step === 'done') {
     return (
       <div className="bg-gray-900 rounded-2xl p-6 border border-gray-800">
-        <div className="text-center py-8">
+        <div className="text-center py-6">
           <div className="w-16 h-16 rounded-full bg-green-500/20 flex items-center justify-center mx-auto mb-4">
             <svg className="w-8 h-8 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
             </svg>
           </div>
-          <h3 className="text-xl font-semibold text-green-400 mb-2">Agent Fully Registered!</h3>
-          <p className="text-gray-400 mb-2">Your AI agent is registered on both:</p>
-          <div className="text-sm text-gray-500 space-y-1 mb-4">
-            <p>✓ ERC-8004 Identity (onchain NFT)</p>
-            <p>✓ AgentTreasury (budget: {budget} USDC)</p>
-          </div>
-          {identityTxHash && (
+          <h3 className="text-xl font-semibold text-green-400 mb-2">Agent Registered!</h3>
+          <p className="text-gray-400 text-sm mb-3">
+            <span className="text-white font-medium">{name}</span> ({agentType})
+          </p>
+          {tokenId && (
+            <p className="text-sm text-gray-400 mb-2">
+              Token ID: <span className="text-violet-400 font-mono">#{tokenId}</span>
+            </p>
+          )}
+          {txHash && (
             <a
-              href={`${EXPLORER_URL}/tx/${identityTxHash}`}
+              href={`${EXPLORER_URL}/tx/${txHash}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-violet-400 hover:underline text-sm block"
+              className="text-violet-400 hover:underline text-sm"
             >
-              Identity TX →
+              View on Explorer →
             </a>
           )}
-          {treasuryHash && (
-            <a
-              href={`${EXPLORER_URL}/tx/${treasuryHash}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-violet-400 hover:underline text-sm block"
-            >
-              Treasury TX →
-            </a>
-          )}
+          <p className="text-gray-500 text-xs mt-4">
+            Agent registered on ERC-8004 Identity Registry
+          </p>
           <button
             onClick={() => {
               setStep('form');
               setName('');
               setMetadataURI('');
-              setBudget('');
-              setIdentityTokenId(null);
-              setIdentityTxHash(null);
-              setTreasuryTxHash(null);
+              setTxHash(null);
+              setTokenId(null);
+              setError(null);
             }}
-            className="block mx-auto mt-4 text-sm text-gray-400 hover:text-white"
+            className="mt-4 px-4 py-2 text-sm text-gray-400 hover:text-white border border-gray-700 rounded-lg hover:border-gray-600 transition-colors"
           >
             Register another
           </button>
@@ -191,147 +136,22 @@ export default function RegisterAgent() {
     );
   }
 
-  // Step 2: Budget entry (after identity registration)
-  if (step === 'treasury' && isIdentitySuccess) {
+  // Submitting state
+  if (step === 'submitting') {
     return (
       <div className="bg-gray-900 rounded-2xl p-6 border border-gray-800">
-        <h2 className="text-lg font-semibold text-white mb-2">Step 2: Set Agent Budget</h2>
-        <p className="text-gray-500 text-sm mb-4">
-          Identity registered ✓ — Now set the USDC budget for <span className="text-violet-400">{name}</span>
-        </p>
-
-        {identityHash && (
-          <div className="bg-green-900/20 border border-green-800/30 rounded-lg p-3 mb-4">
-            <p className="text-green-400 text-xs">✓ ERC-8004 Identity TX confirmed</p>
-            <a
-              href={`${EXPLORER_URL}/tx/${identityHash}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-green-300 text-xs font-mono hover:underline"
-            >
-              {identityHash.slice(0, 20)}...
-            </a>
-          </div>
-        )}
-
-        <div className="space-y-4">
-          <div>
-            <label className="block text-sm text-gray-400 mb-1">Budget (USDC)</label>
-            <input
-              type="number"
-              placeholder="e.g., 100"
-              value={budget}
-              onChange={(e) => setBudget(e.target.value)}
-              min="0"
-              step="0.01"
-              className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-violet-500"
-            />
-            <p className="text-xs text-gray-500 mt-1">USDC to allocate from treasury to this agent</p>
-          </div>
-
-          {/* Token ID input (auto-detected or manual) */}
-          <div>
-            <label className="block text-sm text-gray-400 mb-1">ERC-8004 Token ID</label>
-            <input
-              type="number"
-              placeholder="Auto-detected from TX, or enter manually"
-              value={identityTokenId ? identityTokenId.toString() : ''}
-              onChange={(e) => setIdentityTokenId(e.target.value ? BigInt(e.target.value) : null)}
-              className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-violet-500 font-mono text-sm"
-            />
-            <p className="text-xs text-gray-500 mt-1">Token ID from the ERC-8004 registration TX</p>
-          </div>
-
-          {(isTreasuryPending || isTreasuryConfirming) && (
-            <div className="bg-violet-900/20 border border-violet-800/30 rounded-lg p-3">
-              <p className="text-violet-400 text-sm">
-                {isTreasuryPending ? 'Confirm in wallet...' : 'Registering on AgentTreasury...'}
-              </p>
-            </div>
-          )}
-
-          {treasuryError && (
-            <div className="bg-red-900/20 border border-red-800/30 rounded-lg p-3">
-              <p className="text-red-400 text-sm font-medium">Transaction failed</p>
-              <p className="text-red-300 text-xs mt-1 break-all">
-                {treasuryError.message?.slice(0, 200)}
-              </p>
-              <button
-                onClick={() => resetTreasury()}
-                className="mt-2 text-xs text-red-300 hover:text-white underline"
-              >
-                Try again
-              </button>
-            </div>
-          )}
-
-          {identityError && (
-            <div className="bg-red-900/20 border border-red-800/30 rounded-lg p-3">
-              <p className="text-red-400 text-sm">Identity registration error: {identityError.message?.slice(0, 100)}</p>
-            </div>
-          )}
-
-          <button
-            onClick={() => {
-              if (identityTokenId) {
-                handleRegisterTreasury(identityTokenId);
-              }
-            }}
-            disabled={!budget || parseFloat(budget) <= 0 || !identityTokenId || isTreasuryPending || isTreasuryConfirming}
-            className="w-full py-3 bg-gradient-to-r from-violet-600 to-purple-500 text-white font-semibold rounded-xl hover:from-violet-700 hover:to-purple-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-          >
-            {!identityTokenId
-              ? 'Enter Token ID above to continue'
-              : isTreasuryPending
-              ? 'Confirm in wallet...'
-              : isTreasuryConfirming
-              ? 'Registering...'
-              : `Register on AgentTreasury (${budget || '0'} USDC)`}
-          </button>
-
-          {!identityTokenId && (
-            <p className="text-xs text-yellow-500 text-center">
-              Token ID could not be auto-detected. Check the TX on explorer and enter the token ID manually.
-            </p>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  // Step 1: Identity registration in progress
-  if (step === 'identity') {
-    return (
-      <div className="bg-gray-900 rounded-2xl p-6 border border-gray-800">
-        <h2 className="text-lg font-semibold text-white mb-4">
-          {isIdentitySuccess ? 'Step 1: Identity Registered ✓' : 'Step 1: Registering Identity...'}
-        </h2>
         <div className="text-center py-8">
-          <div className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 ${
-            isIdentitySuccess ? 'bg-green-500/20' : 'bg-violet-500/20 animate-pulse'
-          }`}>
-            {isIdentitySuccess ? (
-              <svg className="w-8 h-8 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-              </svg>
-            ) : (
-              <svg className="w-8 h-8 text-violet-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-              </svg>
-            )}
+          <div className="w-16 h-16 rounded-full bg-violet-500/20 animate-pulse flex items-center justify-center mx-auto mb-4">
+            <svg className="w-8 h-8 text-violet-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+            </svg>
           </div>
           <p className="text-gray-400 mb-2">
-            {isIdentitySuccess
-              ? 'ERC-8004 identity minted successfully!'
-              : isIdentityPending
-              ? 'Confirm the transaction in your wallet...'
-              : isIdentityConfirming
-              ? 'Waiting for blockchain confirmation...'
-              : 'Waiting for confirmation...'}
+            {isPending ? 'Confirm the transaction in your wallet...' : 'Waiting for confirmation...'}
           </p>
-          {identityHash && (
+          {hash && (
             <a
-              href={`${EXPLORER_URL}/tx/${identityHash}`}
+              href={`${EXPLORER_URL}/tx/${hash}`}
               target="_blank"
               rel="noopener noreferrer"
               className="text-violet-400 text-sm hover:underline"
@@ -339,15 +159,15 @@ export default function RegisterAgent() {
               View TX →
             </a>
           )}
-          {isIdentitySuccess && (
-            <p className="text-gray-500 text-xs mt-4">Advancing to Step 2...</p>
+          {isConfirming && (
+            <p className="text-gray-500 text-xs mt-2">Confirming on blockchain...</p>
           )}
         </div>
       </div>
     );
   }
 
-  // Initial form
+  // Form
   return (
     <div className="bg-gray-900 rounded-2xl p-6 border border-gray-800">
       <h2 className="text-lg font-semibold text-white mb-6">Register New Agent (ERC-8004)</h2>
@@ -390,33 +210,27 @@ export default function RegisterAgent() {
             placeholder="Describe what this agent does..."
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            rows={3}
-            className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-violet-500 resize-none"
+            rows={2}
+            className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-violet-500 resize-none text-sm"
           />
         </div>
 
-        <div>
-          <label className="block text-sm text-gray-400 mb-1">Metadata URI (optional)</label>
-          <input
-            type="text"
-            placeholder="ipfs://... (leave empty for auto-generated)"
-            value={metadataURI}
-            onChange={(e) => setMetadataURI(e.target.value)}
-            className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-violet-500 font-mono text-sm"
-          />
-          <p className="text-xs text-gray-500 mt-1">IPFS URI with agent metadata JSON</p>
-        </div>
+        {error && (
+          <div className="bg-red-900/20 border border-red-800/30 rounded-lg p-3">
+            <p className="text-red-400 text-sm">{error}</p>
+          </div>
+        )}
 
         <button
-          onClick={handleRegisterIdentity}
-          disabled={isIdentityPending || !name}
+          onClick={handleRegister}
+          disabled={!name.trim() || isPending}
           className="w-full py-3 bg-gradient-to-r from-violet-600 to-purple-500 text-white font-semibold rounded-xl hover:from-violet-700 hover:to-purple-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
         >
-          {isIdentityPending ? 'Confirming...' : 'Register Agent on ERC-8004'}
+          {isPending ? 'Confirm in wallet...' : 'Register Agent on ERC-8004'}
         </button>
 
         <p className="text-xs text-gray-500 text-center">
-          Step 1: Register on ERC-8004 → Step 2: Set budget on AgentTreasury
+          Registers onchain identity via ERC-8004 on ARC Testnet
         </p>
       </div>
     </div>

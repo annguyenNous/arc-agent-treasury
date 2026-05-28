@@ -3,11 +3,11 @@
 import { useState, useEffect } from 'react';
 import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
 import { parseUnits, formatUnits } from 'viem';
-import { USDC_ADDRESS } from '@/config/chains';
+import { USDC_ADDRESS, AGENT_TREASURY } from '@/config/chains';
 import { USDC_ABI } from '@/contracts/abis';
 
-// Treasury contract address (update after deployment)
-const TREASURY_ADDRESS = process.env.NEXT_PUBLIC_TREASURY_ADDRESS as `0x${string}` || '0x0000000000000000000000000000000000000000';
+// Treasury contract address - uses deployed address from chains config, overridable via env
+const TREASURY_ADDRESS = (process.env.NEXT_PUBLIC_TREASURY_ADDRESS as `0x${string}`) || AGENT_TREASURY;
 
 // Treasury ABI (simplified for frontend)
 const TREASURY_ABI = [

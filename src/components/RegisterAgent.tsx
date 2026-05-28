@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAccount, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
 import { parseUnits } from 'viem';
 import { IDENTITY_REGISTRY, AGENT_TREASURY, EXPLORER_URL } from '@/config/chains';
@@ -90,17 +90,37 @@ export default function RegisterAgent() {
     });
   };
 
-  // Auto-advance from identity to treasury when identity tx confirms
-  // We need to parse the tokenId from the Transfer event in the receipt
-  // ERC-8004 emits Transfer(zeroAddress, owner, tokenId)
-  const handleIdentityConfirmed = () => {
-    // After identity registration, we need the token ID.
-    // For simplicity, we'll use agentCount + 1 as the next token ID
-    // or parse from the receipt logs. Here we ask user for it or auto-detect.
-    setIdentityTxHash(identityHash || null);
-    // Move to budget step - user enters budget, then we call treasury
-    setStep('treasury');
-  };
+  // Auto-advance: when identity TX confirms, parse tokenId and move to step 2
+  useEffect(() => {
+    if (isIdentitySuccess && step === 'identity' && identityHash) {
+      setIdentityTxHash(identityHash);
+
+      // Try to parse tokenId from Transfer event in receipt logs
+      // ERC-8004 register() emits Transfer(address(0), owner, tokenId)
+      // The tokenId is in the 3rd topic (indexed param)
+      fetch(`https://testnet.arcscan.app/api/v2/transactions/${identityHash}`)
+        .then((r) => r.json())
+        .then((data) => {
+          if (data.logs && data.logs.length > 0) {
+            // Find Transfer event (topic[0] = Transfer signature)
+            const transferLog = data.logs.find(
+              (log: { topics: string[] }) =>
+                log.topics[0] === '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef'
+            );
+            if (transferLog && transferLog.topics[3]) {
+              const tokenId = BigInt(transferLog.topics[3]);
+              setIdentityTokenId(tokenId);
+            }
+          }
+        })
+        .catch(() => {
+          // If API fails, user can enter tokenId manually
+          console.log('Could not auto-detect tokenId. Enter manually.');
+        });
+
+      setStep('treasury');
+    }
+  }, [isIdentitySuccess, step, identityHash]);
 
   if (!isConnected) {
     return (
@@ -241,15 +261,31 @@ export default function RegisterAgent() {
   if (step === 'identity') {
     return (
       <div className="bg-gray-900 rounded-2xl p-6 border border-gray-800">
-        <h2 className="text-lg font-semibold text-white mb-4">Step 1: Registering Identity...</h2>
+        <h2 className="text-lg font-semibold text-white mb-4">
+          {isIdentitySuccess ? 'Step 1: Identity Registered ✓' : 'Step 1: Registering Identity...'}
+        </h2>
         <div className="text-center py-8">
-          <div className="w-16 h-16 rounded-full bg-violet-500/20 flex items-center justify-center mx-auto mb-4 animate-pulse">
-            <svg className="w-8 h-8 text-violet-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-            </svg>
+          <div className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 ${
+            isIdentitySuccess ? 'bg-green-500/20' : 'bg-violet-500/20 animate-pulse'
+          }`}>
+            {isIdentitySuccess ? (
+              <svg className="w-8 h-8 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+            ) : (
+              <svg className="w-8 h-8 text-violet-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+              </svg>
+            )}
           </div>
           <p className="text-gray-400 mb-2">
-            {isIdentityPending ? 'Confirm the transaction in your wallet...' : 'Waiting for confirmation...'}
+            {isIdentitySuccess
+              ? 'ERC-8004 identity minted successfully!'
+              : isIdentityPending
+              ? 'Confirm the transaction in your wallet...'
+              : isIdentityConfirming
+              ? 'Waiting for blockchain confirmation...'
+              : 'Waiting for confirmation...'}
           </p>
           {identityHash && (
             <a
@@ -260,6 +296,9 @@ export default function RegisterAgent() {
             >
               View TX →
             </a>
+          )}
+          {isIdentitySuccess && (
+            <p className="text-gray-500 text-xs mt-4">Advancing to Step 2...</p>
           )}
         </div>
       </div>

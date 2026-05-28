@@ -11,7 +11,13 @@ import "@openzeppelin/contracts/utils/Pausable.sol";
 /// @notice Manages treasury funds, agent allocations, and automated operations
 /// @dev Integrates with ERC-8004 identity and ERC-8183 jobs on ARC Network
 /// @dev Includes Pausable emergency stop, ReentrancyGuard, and event coverage
-contract AgentTreasury is Ownable, ReentrancyGuard, Pausable {
+/// @dev Implements IAutomationCompatible for Gelato / Chainlink Automation
+interface IAutomationCompatible {
+    function checkUpkeep(bytes calldata checkData) external returns (bool upkeepNeeded, bytes memory performData);
+    function performUpkeep(bytes calldata performData) external;
+}
+
+contract AgentTreasury is Ownable, ReentrancyGuard, Pausable, IAutomationCompatible {
     using SafeERC20 for IERC20;
 
     // ============================================
@@ -357,5 +363,119 @@ contract AgentTreasury is Ownable, ReentrancyGuard, Pausable {
     /// @notice Get total reserved for scheduled payments
     function getTotalReserved() external view returns (uint256) {
         return totalReserved;
+    }
+
+    // ============================================
+    // AUTOMATION (Gelato / Chainlink Automation)
+    // ============================================
+
+    /// @notice Check if any scheduled payments are ready for execution
+    /// @dev Called off-chain by Gelato / Chainlink nodes
+    /// @param checkData Encoded array of payment IDs to check (empty = scan all)
+    /// @return upkeepNeeded True if at least one payment is ready
+    /// @return performData Encoded array of payment IDs ready for execution
+    function checkUpkeep(bytes calldata checkData)
+        external
+        view
+        override
+        returns (bool upkeepNeeded, bytes memory performData)
+    {
+        uint256[] memory paymentIds;
+
+        if (checkData.length > 0) {
+            // Decode specific payment IDs to check
+            paymentIds = abi.decode(checkData, (uint256[]));
+        } else {
+            // Scan all payments (limited to avoid gas issues)
+            uint256 count = paymentCount;
+            uint256 maxScan = count > 50 ? 50 : count;
+            paymentIds = new uint256[](maxScan);
+            for (uint256 i = 0; i < maxScan; i++) {
+                paymentIds[i] = i + 1;
+            }
+        }
+
+        uint256[] memory readyPayments = new uint256[](paymentIds.length);
+        uint256 readyCount = 0;
+
+        for (uint256 i = 0; i < paymentIds.length; i++) {
+            ScheduledPayment storage p = scheduledPayments[paymentIds[i]];
+            if (
+                p.active &&
+                block.timestamp >= p.nextExecution &&
+                (p.maxExecutions == 0 || p.totalExecutions < p.maxExecutions) &&
+                usdc.balanceOf(address(this)) >= p.amount
+            ) {
+                readyPayments[readyCount++] = paymentIds[i];
+            }
+        }
+
+        if (readyCount > 0) {
+            // Trim array to actual count
+            uint256[] memory result = new uint256[](readyCount);
+            for (uint256 i = 0; i < readyCount; i++) {
+                result[i] = readyPayments[i];
+            }
+            return (true, abi.encode(result));
+        }
+
+        return (false, bytes(""));
+    }
+
+    /// @notice Execute payments identified by checkUpkeep
+    /// @dev Called on-chain by Gelato / Chainlink executor
+    /// @param performData Encoded array of payment IDs (from checkUpkeep)
+    function performUpkeep(bytes calldata performData) external override whenNotPaused {
+        uint256[] memory paymentIds = abi.decode(performData, (uint256[]));
+
+        for (uint256 i = 0; i < paymentIds.length; i++) {
+            // Re-check conditions (state may have changed)
+            ScheduledPayment storage p = scheduledPayments[paymentIds[i]];
+            if (
+                p.active &&
+                block.timestamp >= p.nextExecution &&
+                (p.maxExecutions == 0 || p.totalExecutions < p.maxExecutions) &&
+                usdc.balanceOf(address(this)) >= p.amount
+            ) {
+                // Execute payment (internal, no reentrancy since we're already nonReentrant via parent)
+                usdc.safeTransfer(p.recipient, p.amount);
+                p.totalExecutions++;
+                p.nextExecution = block.timestamp + p.interval;
+                totalSpent += p.amount;
+
+                if (p.interval == 0 || (p.maxExecutions > 0 && p.totalExecutions >= p.maxExecutions)) {
+                    totalReserved -= p.amount;
+                    if (p.interval > 0) {
+                        p.active = false;
+                    }
+                }
+
+                emit PaymentExecuted(paymentIds[i], p.recipient, p.amount, p.agentId);
+            }
+        }
+    }
+
+    /// @notice Get all active payments ready for execution
+    /// @return ids Array of payment IDs that are ready
+    function getReadyPayments() external view returns (uint256[] memory ids) {
+        uint256 count = paymentCount;
+        uint256[] memory ready = new uint256[](count);
+        uint256 readyCount = 0;
+
+        for (uint256 i = 1; i <= count; i++) {
+            ScheduledPayment storage p = scheduledPayments[i];
+            if (
+                p.active &&
+                block.timestamp >= p.nextExecution &&
+                (p.maxExecutions == 0 || p.totalExecutions < p.maxExecutions)
+            ) {
+                ready[readyCount++] = i;
+            }
+        }
+
+        ids = new uint256[](readyCount);
+        for (uint256 i = 0; i < readyCount; i++) {
+            ids[i] = ready[i];
+        }
     }
 }

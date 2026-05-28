@@ -9,7 +9,6 @@ import { join } from 'path';
 const CONFIG_PATH = join(process.cwd(), '.treasury-config.json');
 
 export interface TreasuryConfig {
-  seed: string | null;
   strategies: {
     rebalanceThreshold: number;
     minGasReserve: string;
@@ -26,7 +25,6 @@ export interface TreasuryConfig {
 }
 
 const DEFAULT_CONFIG: TreasuryConfig = {
-  seed: null,
   strategies: {
     rebalanceThreshold: 0.2,
     minGasReserve: '1.0',
@@ -63,4 +61,22 @@ export async function updateConfig(updates: Partial<TreasuryConfig>): Promise<Tr
   const updated = { ...current, ...updates };
   await saveConfig(updated);
   return updated;
+}
+
+/**
+ * Load sensitive credentials from environment variables.
+ * NEVER persisted to disk — always read from .env.local / process.env.
+ */
+export function loadCredentials(): { privateKey: `0x${string}`; anthropicApiKey?: string } {
+  const privateKey = process.env.AGENT_PRIVATE_KEY as `0x${string}` | undefined;
+  if (!privateKey || privateKey === '0x') {
+    throw new Error(
+      'AGENT_PRIVATE_KEY not set. Add it to .env.local:\n  AGENT_PRIVATE_KEY=0xYOUR_KEY_HERE'
+    );
+  }
+
+  return {
+    privateKey,
+    anthropicApiKey: process.env.ANTHROPIC_API_KEY,
+  };
 }

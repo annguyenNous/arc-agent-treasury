@@ -648,4 +648,135 @@ describe('AgentTreasury', function () {
       ).to.be.revertedWith('Insufficient balance');
     });
   });
+
+  // ============================================
+  // GETTREASURYINFO BUG FIX TESTS
+  // ============================================
+
+  describe('Treasury Info - Available Calculation Fix', function () {
+    it('Should subtract both allocated AND reserved from available', async function () {
+      const { treasury, usdc, owner, recipient } = await deployTreasuryFixture();
+      const depositAmount = parseUnits('1000', 6);
+      const budget = parseUnits('300', 6);
+      const paymentAmount = parseUnits('100', 6);
+
+      await usdc.approve(await treasury.getAddress(), depositAmount);
+      await treasury.deposit(depositAmount);
+      await treasury.registerAgent(1, 'Agent', 'treasury', budget);
+
+      // Before scheduling payment: available = 1000 - 300 = 700
+      let info = await treasury.getTreasuryInfo();
+      expect(info.available).to.equal(depositAmount - budget);
+
+      // Schedule payment: reserved = 100
+      await treasury.schedulePayment(recipient.address, paymentAmount, 0, 1, 'Test', 1);
+
+      // After scheduling: available = 1000 - 300 - 100 = 600
+      info = await treasury.getTreasuryInfo();
+      expect(info.totalBalance).to.equal(depositAmount);
+      expect(info.allocatedToAgents).to.equal(budget);
+      expect(info.reservedForPayments).to.equal(paymentAmount);
+      expect(info.available).to.equal(depositAmount - budget - paymentAmount);
+    });
+
+    it('Should return 0 available when fully committed', async function () {
+      const { treasury, usdc, owner, recipient } = await deployTreasuryFixture();
+      const depositAmount = parseUnits('1000', 6);
+      const budget = parseUnits('600', 6);
+      const paymentAmount = parseUnits('400', 6);
+
+      await usdc.approve(await treasury.getAddress(), depositAmount);
+      await treasury.deposit(depositAmount);
+      await treasury.registerAgent(1, 'Agent', 'treasury', budget);
+      await treasury.schedulePayment(recipient.address, paymentAmount, 0, 1, 'Test', 1);
+
+      const info = await treasury.getTreasuryInfo();
+      expect(info.available).to.equal(0);
+    });
+  });
+
+  // ============================================
+  // AUTOMATION TESTS (Gelato / Chainlink)
+  // ============================================
+
+  describe('Automation (checkUpkeep / performUpkeep)', function () {
+    it('Should return upkeepNeeded=false when no payments scheduled', async function () {
+      const { treasury } = await deployTreasuryFixture();
+      const [upkeepNeeded] = await treasury.checkUpkeep('0x');
+      expect(upkeepNeeded).to.be.false;
+    });
+
+    it('Should return upkeepNeeded=true when payment is ready', async function () {
+      const { treasury, usdc, owner, recipient } = await deployTreasuryFixture();
+      const budget = parseUnits('500', 6);
+
+      await usdc.approve(await treasury.getAddress(), budget);
+      await treasury.deposit(budget);
+      await treasury.registerAgent(1, 'Agent', 'treasury', budget);
+
+      // Schedule one-time payment (interval=0, ready immediately)
+      await treasury.schedulePayment(recipient.address, parseUnits('10', 6), 0, 1, 'Test', 1);
+
+      const [upkeepNeeded, performData] = await treasury.checkUpkeep('0x');
+      expect(upkeepNeeded).to.be.true;
+
+      // Decode performData to verify payment IDs
+      const decoded = hre.ethers.AbiCoder.defaultAbiCoder().decode(['uint256[]'], performData);
+      expect(decoded[0].length).to.equal(1);
+      expect(decoded[0][0]).to.equal(1);
+    });
+
+    it('Should execute payments via performUpkeep', async function () {
+      const { treasury, usdc, owner, recipient } = await deployTreasuryFixture();
+      const budget = parseUnits('500', 6);
+      const paymentAmount = parseUnits('10', 6);
+
+      await usdc.approve(await treasury.getAddress(), budget);
+      await treasury.deposit(budget);
+      await treasury.registerAgent(1, 'Agent', 'treasury', budget);
+      await treasury.schedulePayment(recipient.address, paymentAmount, 0, 1, 'Test', 1);
+
+      // Get performData from checkUpkeep
+      const [, performData] = await treasury.checkUpkeep('0x');
+
+      // Execute via performUpkeep
+      await treasury.performUpkeep(performData);
+
+      expect(await usdc.balanceOf(recipient.address)).to.equal(paymentAmount);
+      expect(await treasury.totalSpent()).to.equal(paymentAmount);
+      expect(await treasury.totalReserved()).to.equal(0);
+    });
+
+    it('Should return ready payments via getReadyPayments', async function () {
+      const { treasury, usdc, owner, recipient } = await deployTreasuryFixture();
+      const budget = parseUnits('500', 6);
+
+      await usdc.approve(await treasury.getAddress(), budget);
+      await treasury.deposit(budget);
+      await treasury.registerAgent(1, 'Agent', 'treasury', budget);
+
+      // Schedule 2 one-time payments
+      await treasury.schedulePayment(recipient.address, parseUnits('10', 6), 0, 1, 'P1', 1);
+      await treasury.schedulePayment(recipient.address, parseUnits('20', 6), 0, 1, 'P2', 1);
+
+      const ready = await treasury.getReadyPayments();
+      expect(ready.length).to.equal(2);
+    });
+
+    it('Should not include inactive payments in upkeep', async function () {
+      const { treasury, usdc, owner, recipient } = await deployTreasuryFixture();
+      const budget = parseUnits('500', 6);
+
+      await usdc.approve(await treasury.getAddress(), budget);
+      await treasury.deposit(budget);
+      await treasury.registerAgent(1, 'Agent', 'treasury', budget);
+      await treasury.schedulePayment(recipient.address, parseUnits('10', 6), 0, 1, 'Test', 1);
+
+      // Cancel payment
+      await treasury.cancelPayment(1);
+
+      const [upkeepNeeded] = await treasury.checkUpkeep('0x');
+      expect(upkeepNeeded).to.be.false;
+    });
+  });
 });

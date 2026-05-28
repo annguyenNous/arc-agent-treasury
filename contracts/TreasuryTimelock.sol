@@ -18,16 +18,4 @@ contract TreasuryTimelock is TimelockController {
         address[] memory executors,
         address admin
     ) TimelockController(minDelay, proposers, executors, admin) {}
-
-    /// @notice Required override for TimelockController
-    function _execute(uint256 id, address target, bytes calldata data) internal override {
-        (bool success, ) = target.call(data);
-        require(success, "Timelock: underlying transaction reverted");
-    }
-
-    /// @notice Required override for TimelockController
-    function _beforeCall(uint256 id, address target, bytes calldata data) internal override {}
-
-    /// @notice Required override for TimelockController
-    function _afterCall(uint256 id, address target, bytes calldata data) internal override {}
 }

@@ -146,6 +146,25 @@ npx tsx scripts/run-agent.ts multi
 | Human approval required | Any action >100 USDC |
 | Minimum gas reserve | 1.0 USDC |
 
+## Automated Payment Execution (Gelato / Chainlink)
+
+The contract implements `IAutomationCompatible` for automated payment execution:
+
+| Function | Description |
+|----------|-------------|
+| `checkUpkeep(bytes)` | Returns ready payment IDs (off-chain, free) |
+| `performUpkeep(bytes)` | Executes ready payments (on-chain, gas) |
+| `getReadyPayments()` | View: list payments ready for execution |
+
+```bash
+# Verify automation interface works
+npx tsx scripts/setup-gelato.ts
+```
+
+Register with [Gelato Network](https://app.gelato.network) or
+[Chainlink Automation](https://automation.chainlink.dev) for hands-free
+scheduled payment execution.
+
 ## API Endpoints
 
 | Method | Path | Description |

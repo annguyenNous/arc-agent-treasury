@@ -1,31 +1,7 @@
 import Header from "@/components/Header";
 import TreasuryOverview from "@/components/TreasuryOverview";
-import AgentCard from "@/components/AgentCard";
+import DashboardAgents from "@/components/DashboardAgents";
 import PaymentScheduler from "@/components/PaymentScheduler";
-
-const DEMO_AGENTS = [
-  {
-    name: "Treasury Guardian",
-    type: "treasury",
-    status: "active" as const,
-    capabilities: ["balance_monitoring", "auto_rebalance", "risk_assessment"],
-    reputation: 95,
-  },
-  {
-    name: "Bill Pay Bot",
-    type: "billing",
-    status: "active" as const,
-    capabilities: ["invoice_processing", "scheduled_payments", "receipt_tracking"],
-    reputation: 88,
-  },
-  {
-    name: "Arb Scanner",
-    type: "arbitrage",
-    status: "paused" as const,
-    capabilities: ["rate_monitoring", "cross_dex_arbitrage", "profit_optimization"],
-    reputation: 72,
-  },
-];
 
 export default function Home() {
   return (
@@ -69,17 +45,13 @@ export default function Home() {
 
         {/* Main Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Agents */}
+          {/* Agents (on-chain) */}
           <div className="lg:col-span-2">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xl font-semibold text-white">Your Agents</h2>
               <a href="/agents" className="text-sm text-violet-400 hover:underline">View All →</a>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {DEMO_AGENTS.map((agent) => (
-                <AgentCard key={agent.name} {...agent} />
-              ))}
-            </div>
+            <DashboardAgents />
           </div>
 
           {/* Payment Scheduler */}

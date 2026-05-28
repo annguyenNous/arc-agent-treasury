@@ -81,7 +81,7 @@ contract AgentTreasury is Ownable, ReentrancyGuard, Pausable {
     event AgentDeactivated(uint256 indexed agentId);
     event ReputationUpdated(uint256 indexed agentId, uint256 oldScore, uint256 newScore);
     event PaymentScheduled(uint256 indexed paymentId, address indexed recipient, uint256 amount, string label);
-    event PaymentExecuted(uint256 indexed paymentId, address indexed recipient, uint256 amount);
+    event PaymentExecuted(uint256 indexed paymentId, address indexed recipient, uint256 amount, uint256 indexed agentId);
     event PaymentCancelled(uint256 indexed paymentId);
     event TreasuryDeposit(address indexed depositor, uint256 amount);
     event TreasuryWithdrawal(address indexed to, uint256 amount);
@@ -138,14 +138,16 @@ contract AgentTreasury is Ownable, ReentrancyGuard, Pausable {
     }
 
     /// @notice Get treasury balance and allocation info
+    /// @dev available = balance - totalAllocated - totalReserved (clamped to 0)
     function getTreasuryInfo() external view returns (TreasuryAllocation memory) {
         uint256 balance = usdc.balanceOf(address(this));
-        
+        uint256 committed = totalAllocated + totalReserved;
+
         return TreasuryAllocation({
             totalBalance: balance,
             allocatedToAgents: totalAllocated,
             reservedForPayments: totalReserved,
-            available: balance > totalAllocated ? balance - totalAllocated : 0
+            available: balance > committed ? balance - committed : 0
         });
     }
 
@@ -305,7 +307,7 @@ contract AgentTreasury is Ownable, ReentrancyGuard, Pausable {
             totalReserved -= payment.amount;
         }
 
-        emit PaymentExecuted(paymentId, payment.recipient, payment.amount);
+        emit PaymentExecuted(paymentId, payment.recipient, payment.amount, payment.agentId);
     }
 
     /// @notice Cancel a scheduled payment

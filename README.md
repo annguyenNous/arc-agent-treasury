@@ -2,6 +2,8 @@
 
 AI-Powered Treasury Management on ARC Network - Circle's purpose-built L1 for real-time finance.
 
+**🚀 Live Demo: [arc-agent-treasury.vercel.app](https://arc-agent-treasury.vercel.app)**
+
 ## Overview
 
 ArcAgent Treasury enables autonomous AI agents to manage treasury operations on ARC Network:
@@ -70,6 +72,29 @@ bash scripts/deploy-and-verify.sh
 ```
 
 See [docs/VERIFICATION.md](docs/VERIFICATION.md) for manual verification steps.
+
+## Deployment
+
+### Vercel (Frontend)
+
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/annguyenNous/arc-agent-treasury)
+
+```bash
+# Deploy to Vercel
+vercel login
+vercel deploy --prod
+```
+
+Environment variables for Vercel:
+| Variable | Value |
+|----------|-------|
+| NEXT_PUBLIC_TREASURY_ADDRESS | `0x32faE7187a00f096B0536Ad4872fb324Bae39671` |
+| NEXT_PUBLIC_ARC_RPC | `https://rpc.testnet.arc.network` |
+| NEXT_PUBLIC_WC_PROJECT_ID | Your WalletConnect project ID |
+
+### Smart Contracts (ARC Testnet)
+
+See "Deploy & Verify AgentTreasury" section above.
 
 ## Getting Started
 

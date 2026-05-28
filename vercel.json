@@ -1,0 +1,10 @@
+{
+  "framework": "nextjs",
+  "buildCommand": "npm run build",
+  "installCommand": "npm install",
+  "env": {
+    "NEXT_PUBLIC_TREASURY_ADDRESS": "0x32faE7187a00f096B0536Ad4872fb324Bae39671",
+    "NEXT_PUBLIC_ARC_RPC": "https://rpc.testnet.arc.network",
+    "NEXT_PUBLIC_WC_PROJECT_ID": "arc-agent-treasury-demo"
+  }
+}

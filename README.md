@@ -4,6 +4,8 @@ AI-Powered Treasury Management on ARC Network - Circle's purpose-built L1 for re
 
 **🚀 Live Demo: [arc-agent-treasury.vercel.app](https://arc-agent-treasury.vercel.app)**
 
+![Dashboard](docs/screenshots/dashboard.png)
+
 ## Overview
 
 ArcAgent Treasury enables autonomous AI agents to manage treasury operations on ARC Network:

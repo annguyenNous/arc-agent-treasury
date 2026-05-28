@@ -428,4 +428,224 @@ describe('AgentTreasury', function () {
       expect(await treasury.getPaymentCount()).to.equal(2);
     });
   });
+
+  // ============================================
+  // EDGE CASE TESTS (NEW)
+  // ============================================
+
+  describe('Edge Cases - Agent Registration', function () {
+    it('Should reject agent with empty name', async function () {
+      const { treasury, usdc } = await deployTreasuryFixture();
+      await usdc.approve(await treasury.getAddress(), parseUnits('100', 6));
+      await treasury.deposit(parseUnits('100', 6));
+
+      await expect(
+        treasury.registerAgent(1, '', 'treasury', parseUnits('10', 6))
+      ).to.be.revertedWith('Name required');
+    });
+
+    it('Should reject agent with zero ERC-8004 token ID', async function () {
+      const { treasury, usdc } = await deployTreasuryFixture();
+      await usdc.approve(await treasury.getAddress(), parseUnits('100', 6));
+      await treasury.deposit(parseUnits('100', 6));
+
+      await expect(
+        treasury.registerAgent(0, 'Agent', 'treasury', parseUnits('10', 6))
+      ).to.be.revertedWith('Invalid ERC-8004 token ID');
+    });
+
+    it('Should handle multiple agents from same owner', async function () {
+      const { treasury, usdc, owner } = await deployTreasuryFixture();
+      const budget = parseUnits('50', 6);
+
+      await usdc.approve(await treasury.getAddress(), budget * 5n);
+      await treasury.deposit(budget * 5n);
+
+      await treasury.registerAgent(1, 'Agent 1', 'treasury', budget);
+      await treasury.registerAgent(2, 'Agent 2', 'payment', budget);
+      await treasury.registerAgent(3, 'Agent 3', 'arbitrage', budget);
+
+      const agents = await treasury.getOwnerAgents(owner.address);
+      expect(agents.length).to.equal(3);
+      expect(await treasury.totalAllocated()).to.equal(budget * 3n);
+    });
+  });
+
+  describe('Edge Cases - Budget Updates', function () {
+    it('Should correctly decrease agent budget', async function () {
+      const { treasury, usdc } = await deployTreasuryFixture();
+      const budget = parseUnits('200', 6);
+      const newBudget = parseUnits('50', 6);
+
+      await usdc.approve(await treasury.getAddress(), budget);
+      await treasury.deposit(budget);
+      await treasury.registerAgent(1, 'Agent', 'treasury', budget);
+
+      await treasury.updateAgentBudget(1, newBudget);
+      const agent = await treasury.getAgent(1);
+      expect(agent.budget).to.equal(newBudget);
+      expect(await treasury.totalAllocated()).to.equal(newBudget);
+    });
+
+    it('Should reject budget update for inactive agent', async function () {
+      const { treasury, usdc } = await deployTreasuryFixture();
+      const budget = parseUnits('100', 6);
+
+      await usdc.approve(await treasury.getAddress(), budget);
+      await treasury.deposit(budget);
+      await treasury.registerAgent(1, 'Agent', 'treasury', budget);
+      await treasury.deactivateAgent(1);
+
+      await expect(
+        treasury.updateAgentBudget(1, parseUnits('50', 6))
+      ).to.be.revertedWith('Agent not active');
+    });
+
+    it('Should reject budget update for non-existent agent', async function () {
+      const { treasury } = await deployTreasuryFixture();
+
+      await expect(
+        treasury.updateAgentBudget(999, parseUnits('50', 6))
+      ).to.be.revertedWith('Agent not found');
+    });
+
+    it('Should only allow owner to update budget', async function () {
+      const { treasury, usdc, otherAccount } = await deployTreasuryFixture();
+      const budget = parseUnits('100', 6);
+
+      await usdc.approve(await treasury.getAddress(), budget);
+      await treasury.deposit(budget);
+      await treasury.registerAgent(1, 'Agent', 'treasury', budget);
+
+      await expect(
+        treasury.connect(otherAccount).updateAgentBudget(1, parseUnits('50', 6))
+      ).to.be.reverted;
+    });
+  });
+
+  describe('Edge Cases - Reputation', function () {
+    it('Should reject reputation update for non-existent agent', async function () {
+      const { treasury } = await deployTreasuryFixture();
+
+      await expect(
+        treasury.updateReputation(999, 50)
+      ).to.be.revertedWith('Agent not found');
+    });
+
+    it('Should allow setting reputation to 0', async function () {
+      const { treasury, usdc } = await deployTreasuryFixture();
+      const budget = parseUnits('100', 6);
+
+      await usdc.approve(await treasury.getAddress(), budget);
+      await treasury.deposit(budget);
+      await treasury.registerAgent(1, 'Agent', 'treasury', budget);
+
+      await treasury.updateReputation(1, 0);
+      const agent = await treasury.getAgent(1);
+      expect(agent.reputation).to.equal(0);
+    });
+
+    it('Should allow setting reputation to exactly 100', async function () {
+      const { treasury, usdc } = await deployTreasuryFixture();
+      const budget = parseUnits('100', 6);
+
+      await usdc.approve(await treasury.getAddress(), budget);
+      await treasury.deposit(budget);
+      await treasury.registerAgent(1, 'Agent', 'treasury', budget);
+
+      await treasury.updateReputation(1, 100);
+      const agent = await treasury.getAgent(1);
+      expect(agent.reputation).to.equal(100);
+    });
+  });
+
+  describe('Edge Cases - Payment Execution', function () {
+    it('Should reject executing already cancelled payment', async function () {
+      const { treasury, usdc, recipient } = await deployTreasuryFixture();
+      const budget = parseUnits('500', 6);
+      const paymentAmount = parseUnits('10', 6);
+
+      await usdc.approve(await treasury.getAddress(), budget);
+      await treasury.deposit(budget);
+      await treasury.registerAgent(1, 'Agent', 'treasury', budget);
+
+      await treasury.schedulePayment(recipient.address, paymentAmount, 0, 1, 'Test', 1);
+      await treasury.cancelPayment(1);
+
+      await expect(treasury.executePayment(1)).to.be.revertedWith('Payment not active');
+    });
+
+    it('Should reject executing non-existent payment', async function () {
+      const { treasury } = await deployTreasuryFixture();
+
+      await expect(treasury.executePayment(999)).to.be.revertedWith('Payment not active');
+    });
+
+    it('Should reject scheduling payment with zero amount', async function () {
+      const { treasury, usdc, recipient } = await deployTreasuryFixture();
+      const budget = parseUnits('100', 6);
+
+      await usdc.approve(await treasury.getAddress(), budget);
+      await treasury.deposit(budget);
+      await treasury.registerAgent(1, 'Agent', 'treasury', budget);
+
+      await expect(
+        treasury.schedulePayment(recipient.address, 0, 0, 1, 'Zero', 1)
+      ).to.be.revertedWith('Amount must be > 0');
+    });
+
+    it('Should reject cancelling already cancelled payment', async function () {
+      const { treasury, usdc, recipient } = await deployTreasuryFixture();
+      const budget = parseUnits('500', 6);
+      const paymentAmount = parseUnits('10', 6);
+
+      await usdc.approve(await treasury.getAddress(), budget);
+      await treasury.deposit(budget);
+      await treasury.registerAgent(1, 'Agent', 'treasury', budget);
+
+      await treasury.schedulePayment(recipient.address, paymentAmount, 0, 1, 'Test', 1);
+      await treasury.cancelPayment(1);
+
+      // Cancelling again should not revert but should be a no-op
+      await treasury.cancelPayment(1);
+      expect(await treasury.totalReserved()).to.equal(0);
+    });
+
+    it('Should reject unauthorized payment scheduling', async function () {
+      const { treasury, usdc, recipient, otherAccount } = await deployTreasuryFixture();
+      const budget = parseUnits('500', 6);
+      const paymentAmount = parseUnits('10', 6);
+
+      await usdc.approve(await treasury.getAddress(), budget);
+      await treasury.deposit(budget);
+      await treasury.registerAgent(1, 'Agent', 'treasury', budget);
+
+      await expect(
+        treasury.connect(otherAccount).schedulePayment(
+          recipient.address, paymentAmount, 0, 1, 'Fail', 1
+        )
+      ).to.be.revertedWith('Not authorized');
+    });
+  });
+
+  describe('Edge Cases - Withdrawal', function () {
+    it('Should reject zero withdrawal', async function () {
+      const { treasury, recipient } = await deployTreasuryFixture();
+
+      await expect(
+        treasury.withdraw(recipient.address, 0)
+      ).to.be.revertedWith('Amount must be > 0');
+    });
+
+    it('Should reject withdrawal exceeding balance', async function () {
+      const { treasury, usdc, recipient } = await deployTreasuryFixture();
+
+      await usdc.approve(await treasury.getAddress(), parseUnits('100', 6));
+      await treasury.deposit(parseUnits('100', 6));
+
+      await expect(
+        treasury.withdraw(recipient.address, parseUnits('200', 6))
+      ).to.be.revertedWith('Insufficient balance');
+    });
+  });
 });

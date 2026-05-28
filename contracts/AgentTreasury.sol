@@ -5,11 +5,13 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/Pausable.sol";
 
 /// @title AgentTreasury - AI Agent Treasury Management
 /// @notice Manages treasury funds, agent allocations, and automated operations
 /// @dev Integrates with ERC-8004 identity and ERC-8183 jobs on ARC Network
-contract AgentTreasury is Ownable, ReentrancyGuard {
+/// @dev Includes Pausable emergency stop, ReentrancyGuard, and event coverage
+contract AgentTreasury is Ownable, ReentrancyGuard, Pausable {
     using SafeERC20 for IERC20;
 
     // ============================================
@@ -77,11 +79,14 @@ contract AgentTreasury is Ownable, ReentrancyGuard {
     event AgentRegistered(uint256 indexed agentId, address indexed owner, string name, string agentType);
     event AgentBudgetUpdated(uint256 indexed agentId, uint256 oldBudget, uint256 newBudget);
     event AgentDeactivated(uint256 indexed agentId);
+    event ReputationUpdated(uint256 indexed agentId, uint256 oldScore, uint256 newScore);
     event PaymentScheduled(uint256 indexed paymentId, address indexed recipient, uint256 amount, string label);
     event PaymentExecuted(uint256 indexed paymentId, address indexed recipient, uint256 amount);
     event PaymentCancelled(uint256 indexed paymentId);
     event TreasuryDeposit(address indexed depositor, uint256 amount);
     event TreasuryWithdrawal(address indexed to, uint256 amount);
+    event EmergencyPause(address indexed triggeredBy);
+    event EmergencyUnpause(address indexed triggeredBy);
 
     // ============================================
     // CONSTRUCTOR
@@ -92,11 +97,29 @@ contract AgentTreasury is Ownable, ReentrancyGuard {
     }
 
     // ============================================
+    // EMERGENCY CONTROLS
+    // ============================================
+
+    /// @notice Emergency pause - stops all state-changing operations
+    /// @dev Only callable by owner
+    function emergencyPause() external onlyOwner {
+        _pause();
+        emit EmergencyPause(msg.sender);
+    }
+
+    /// @notice Unpause after emergency
+    /// @dev Only callable by owner
+    function emergencyUnpause() external onlyOwner {
+        _unpause();
+        emit EmergencyUnpause(msg.sender);
+    }
+
+    // ============================================
     // TREASURY MANAGEMENT
     // ============================================
 
     /// @notice Deposit USDC into treasury
-    function deposit(uint256 amount) external nonReentrant {
+    function deposit(uint256 amount) external nonReentrant whenNotPaused {
         require(amount > 0, "Amount must be > 0");
         usdc.safeTransferFrom(msg.sender, address(this), amount);
         totalDeposited += amount;
@@ -104,7 +127,7 @@ contract AgentTreasury is Ownable, ReentrancyGuard {
     }
 
     /// @notice Withdraw USDC from treasury (owner only)
-    function withdraw(address to, uint256 amount) external onlyOwner nonReentrant {
+    function withdraw(address to, uint256 amount) external onlyOwner nonReentrant whenNotPaused {
         require(to != address(0), "Invalid address");
         require(amount > 0, "Amount must be > 0");
         require(usdc.balanceOf(address(this)) >= amount, "Insufficient balance");
@@ -136,7 +159,7 @@ contract AgentTreasury is Ownable, ReentrancyGuard {
         string calldata name,
         string calldata agentType,
         uint256 budget
-    ) external nonReentrant returns (uint256) {
+    ) external nonReentrant whenNotPaused returns (uint256) {
         require(erc8004TokenId > 0, "Invalid ERC-8004 token ID");
         require(bytes(name).length > 0, "Name required");
         require(budget > 0, "Budget must be > 0");
@@ -164,19 +187,27 @@ contract AgentTreasury is Ownable, ReentrancyGuard {
     }
 
     /// @notice Update agent budget
-    function updateAgentBudget(uint256 agentId, uint256 newBudget) external onlyOwner {
+    /// @dev Uses nonReentrant to prevent reentrancy during accounting updates
+    function updateAgentBudget(uint256 agentId, uint256 newBudget) external onlyOwner nonReentrant whenNotPaused {
         Agent storage agent = agents[agentId];
         require(agent.owner != address(0), "Agent not found");
+        require(agent.active, "Agent not active");
         
         uint256 oldBudget = agent.budget;
         agent.budget = newBudget;
-        totalAllocated += (newBudget - oldBudget);
+
+        // Safe accounting: handle increase and decrease
+        if (newBudget > oldBudget) {
+            totalAllocated += (newBudget - oldBudget);
+        } else {
+            totalAllocated -= (oldBudget - newBudget);
+        }
         
         emit AgentBudgetUpdated(agentId, oldBudget, newBudget);
     }
 
     /// @notice Deactivate an agent
-    function deactivateAgent(uint256 agentId) external {
+    function deactivateAgent(uint256 agentId) external whenNotPaused {
         Agent storage agent = agents[agentId];
         require(agent.owner == msg.sender || msg.sender == owner(), "Not authorized");
         
@@ -188,9 +219,13 @@ contract AgentTreasury is Ownable, ReentrancyGuard {
     }
 
     /// @notice Update agent reputation (called by oracle/validator)
-    function updateReputation(uint256 agentId, uint256 newScore) external onlyOwner {
+    function updateReputation(uint256 agentId, uint256 newScore) external onlyOwner whenNotPaused {
         require(newScore <= 100, "Score must be <= 100");
+        require(agents[agentId].owner != address(0), "Agent not found");
+
+        uint256 oldScore = agents[agentId].reputation;
         agents[agentId].reputation = newScore;
+        emit ReputationUpdated(agentId, oldScore, newScore);
     }
 
     /// @notice Get agent details
@@ -215,7 +250,7 @@ contract AgentTreasury is Ownable, ReentrancyGuard {
         uint256 maxExecutions,
         string calldata label,
         uint256 agentId
-    ) external returns (uint256) {
+    ) external whenNotPaused returns (uint256) {
         require(recipient != address(0), "Invalid recipient");
         require(amount > 0, "Amount must be > 0");
         require(agents[agentId].active, "Agent not active");
@@ -247,7 +282,7 @@ contract AgentTreasury is Ownable, ReentrancyGuard {
     }
 
     /// @notice Execute a scheduled payment
-    function executePayment(uint256 paymentId) external nonReentrant {
+    function executePayment(uint256 paymentId) external nonReentrant whenNotPaused {
         ScheduledPayment storage payment = scheduledPayments[paymentId];
         require(payment.active, "Payment not active");
         require(block.timestamp >= payment.nextExecution, "Not ready");
@@ -274,7 +309,7 @@ contract AgentTreasury is Ownable, ReentrancyGuard {
     }
 
     /// @notice Cancel a scheduled payment
-    function cancelPayment(uint256 paymentId) external {
+    function cancelPayment(uint256 paymentId) external whenNotPaused {
         ScheduledPayment storage payment = scheduledPayments[paymentId];
         require(
             agents[payment.agentId].owner == msg.sender || msg.sender == owner(),

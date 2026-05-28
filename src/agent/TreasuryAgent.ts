@@ -18,6 +18,7 @@ export interface AgentAction {
   txHash?: Hash;
   success: boolean;
   timestamp: string;
+  retryCount?: number;
 }
 
 export interface AgentContext {
@@ -34,6 +35,42 @@ export interface AgentConfig {
   anthropicApiKey?: string;
   maxActionsPerCycle?: number;
   balanceThreshold?: string;
+  maxRetries?: number;
+  retryDelayMs?: number;
+}
+
+// ============================================
+// RETRY UTILITY
+// ============================================
+
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  options: {
+    maxRetries: number;
+    delayMs: number;
+    backoffMultiplier: number;
+    label: string;
+  }
+): Promise<T> {
+  let lastError: Error | undefined;
+
+  for (let attempt = 0; attempt <= options.maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (error: unknown) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+
+      if (attempt < options.maxRetries) {
+        const delay = options.delayMs * Math.pow(options.backoffMultiplier, attempt);
+        console.warn(
+          `[Retry] ${options.label} attempt ${attempt + 1}/${options.maxRetries + 1} failed: ${lastError.message}. Retrying in ${delay}ms...`
+        );
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+  }
+
+  throw new Error(`${options.label} failed after ${options.maxRetries + 1} attempts: ${lastError?.message}`);
 }
 
 // ============================================
@@ -83,6 +120,16 @@ class TransferUSDCTool extends Tool {
   async _call(input: string): Promise<string> {
     try {
       const { to, amount } = JSON.parse(input);
+
+      // Validate inputs
+      if (!to || typeof to !== 'string' || !to.startsWith('0x')) {
+        return 'Error: Invalid recipient address';
+      }
+      const parsedAmount = parseFloat(amount);
+      if (isNaN(parsedAmount) || parsedAmount <= 0) {
+        return 'Error: Invalid amount - must be a positive number';
+      }
+
       const hash = await this.walletClient.writeContract({
         chain: arcTestnet,
         account: this.account,
@@ -136,6 +183,10 @@ class RegisterAgentTool extends Tool {
 
   async _call(metadataURI: string): Promise<string> {
     try {
+      if (!metadataURI || metadataURI.trim().length === 0) {
+        return 'Error: metadataURI is required';
+      }
+
       const hash = await this.walletClient.writeContract({
         chain: arcTestnet,
         account: this.account,
@@ -168,6 +219,14 @@ class CreateJobTool extends Tool {
   async _call(input: string): Promise<string> {
     try {
       const { provider, description, duration = 86400 } = JSON.parse(input);
+
+      if (!provider || !provider.startsWith('0x')) {
+        return 'Error: Invalid provider address';
+      }
+      if (typeof duration !== 'number' || duration <= 0) {
+        return 'Error: Invalid duration - must be positive number of seconds';
+      }
+
       const expiredAt = Math.floor(Date.now() / 1000) + duration;
       
       const hash = await this.walletClient.writeContract({
@@ -197,7 +256,7 @@ class CreateJobTool extends Tool {
 // ============================================
 
 export class TreasuryAgent {
-  private model: ChatAnthropic;
+  protected model: ChatAnthropic;
   private publicClient;
   private walletClient;
   private account;
@@ -209,6 +268,8 @@ export class TreasuryAgent {
     this.config = {
       maxActionsPerCycle: 3,
       balanceThreshold: '1.0',
+      maxRetries: 3,
+      retryDelayMs: 2000,
       ...config,
     };
 
@@ -216,6 +277,7 @@ export class TreasuryAgent {
       modelName: 'claude-3-5-sonnet-20241022',
       anthropicApiKey: config.anthropicApiKey || process.env.ANTHROPIC_API_KEY,
       temperature: 0.1,
+      maxRetries: 2, // LangChain built-in retries
     });
 
     this.account = privateKeyToAccount(config.privateKey);
@@ -246,29 +308,39 @@ export class TreasuryAgent {
   }
 
   // ============================================
-  // CONTEXT GATHERING
+  // CONTEXT GATHERING (with retry)
   // ============================================
 
   async gatherContext(): Promise<AgentContext> {
-    const balance = await this.publicClient.readContract({
-      address: USDC_ADDRESS,
-      abi: USDC_ABI,
-      functionName: 'balanceOf',
-      args: [this.account.address],
-    });
+    return withRetry(
+      async () => {
+        const balance = await this.publicClient.readContract({
+          address: USDC_ADDRESS,
+          abi: USDC_ABI,
+          functionName: 'balanceOf',
+          args: [this.account.address],
+        });
 
-    return {
-      address: this.account.address,
-      balance,
-      balanceFormatted: formatUnits(balance, 6),
-      chainId: arcTestnet.id,
-      network: arcTestnet.name,
-      recentActions: this.actionHistory.slice(-10),
-    };
+        return {
+          address: this.account.address,
+          balance,
+          balanceFormatted: formatUnits(balance, 6),
+          chainId: arcTestnet.id,
+          network: arcTestnet.name,
+          recentActions: this.actionHistory.slice(-10),
+        };
+      },
+      {
+        maxRetries: this.config.maxRetries ?? 3,
+        delayMs: this.config.retryDelayMs ?? 2000,
+        backoffMultiplier: 2,
+        label: 'gatherContext',
+      }
+    );
   }
 
   // ============================================
-  // AI ANALYSIS
+  // AI ANALYSIS (with retry + fallback)
   // ============================================
 
   async analyze(context: AgentContext): Promise<AgentAction[]> {
@@ -307,44 +379,72 @@ Return an array of up to 3 actions, each with:
     const humanMessage = `Analyze the treasury and recommend actions now.`;
 
     try {
-      const response = await this.model.invoke([
-        new SystemMessage(systemPrompt),
-        new HumanMessage(humanMessage),
-      ]);
+      const actions = await withRetry(
+        async () => {
+          const response = await this.model.invoke([
+            new SystemMessage(systemPrompt),
+            new HumanMessage(humanMessage),
+          ]);
 
-      // Parse JSON từ Claude
-      let actions: AgentAction[] = [];
-      const text = response.content as string;
+          const text = response.content as string;
 
-      try {
-        // Claude đôi khi trả JSON trong ```json
-        const jsonMatch = text.match(/```json\n([\s\S]*?)\n```/) || text.match(/\[[\s\S]*\]/);
-        actions = jsonMatch ? JSON.parse(jsonMatch[1] || jsonMatch[0]) : JSON.parse(text);
-      } catch {
-        actions = [];
-      }
+          // Parse JSON from Claude response
+          try {
+            const jsonMatch = text.match(/```json\n([\s\S]*?)\n```/) || text.match(/\[[\s\S]*\]/);
+            const parsed = jsonMatch ? JSON.parse(jsonMatch[1] || jsonMatch[0]) : JSON.parse(text);
+            if (!Array.isArray(parsed)) {
+              throw new Error('Response is not an array');
+            }
+            return parsed as AgentAction[];
+          } catch (parseError) {
+            console.warn('[TreasuryAgent] JSON parse failed, returning empty actions');
+            return [] as AgentAction[];
+          }
+        },
+        {
+          maxRetries: this.config.maxRetries ?? 3,
+          delayMs: this.config.retryDelayMs ?? 2000,
+          backoffMultiplier: 2,
+          label: 'analyze',
+        }
+      );
 
       return Array.isArray(actions) ? actions : [];
     } catch (error) {
-      console.error('[TreasuryAgent] Analyze error:', error);
-      return [];
+      console.error('[TreasuryAgent] Analyze error after all retries:', error);
+      // Fallback: return safe no-op action
+      return [{
+        type: 'check_balance',
+        params: { address: context.address },
+        success: false,
+        timestamp: new Date().toISOString(),
+        result: `Analysis failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      }];
     }
   }
 
   // ============================================
-  // EXECUTE ACTION VIA TOOLS
+  // EXECUTE ACTION VIA TOOLS (with retry)
   // ============================================
 
   async executeAction(action: AgentAction): Promise<AgentAction> {
     console.log(`[TreasuryAgent] Executing: ${action.type}`);
 
     try {
-      // LangChain tool call
       const tool = this.tools.find(t => t.name === action.type);
       if (!tool) throw new Error(`Tool ${action.type} not found`);
 
       const input = action.params ? JSON.stringify(action.params) : '';
-      const result = await tool.invoke(input);
+
+      const result = await withRetry(
+        async () => tool.invoke(input),
+        {
+          maxRetries: this.config.maxRetries ?? 3,
+          delayMs: this.config.retryDelayMs ?? 2000,
+          backoffMultiplier: 2,
+          label: `executeAction(${action.type})`,
+        }
+      );
 
       const executedAction: AgentAction = {
         ...action,
@@ -359,7 +459,7 @@ Return an array of up to 3 actions, each with:
       const message = error instanceof Error ? error.message : 'Unknown error';
       const failedAction: AgentAction = {
         ...action,
-        result: `Execution failed: ${message}`,
+        result: `Execution failed after retries: ${message}`,
         success: false,
         timestamp: new Date().toISOString(),
       };
@@ -375,54 +475,76 @@ Return an array of up to 3 actions, each with:
   async run(): Promise<AgentAction[]> {
     console.log(`[TreasuryAgent] 🚀 Starting treasury analysis cycle at ${new Date().toISOString()}`);
 
-    const context = await this.gatherContext();
-    console.log(`[TreasuryAgent] Balance: ${context.balanceFormatted} USDC`);
+    try {
+      const context = await this.gatherContext();
+      console.log(`[TreasuryAgent] Balance: ${context.balanceFormatted} USDC`);
 
-    const plannedActions = await this.analyze(context);
-    const executed: AgentAction[] = [];
-    const maxActions = this.config.maxActionsPerCycle || 3;
+      const plannedActions = await this.analyze(context);
+      const executed: AgentAction[] = [];
+      const maxActions = this.config.maxActionsPerCycle || 3;
 
-    for (const action of plannedActions.slice(0, maxActions)) {
-      if (executed.length >= maxActions) break;
+      for (const action of plannedActions.slice(0, maxActions)) {
+        if (executed.length >= maxActions) break;
 
-      // Safety guard
-      if (action.type === 'transfer_usdc' && context.balance < parseUnits('1', 6)) {
-        console.warn('[TreasuryAgent] Safety: Balance too low, skipping transfer');
-        continue;
+        // Safety guard
+        if (action.type === 'transfer_usdc' && context.balance < parseUnits('1', 6)) {
+          console.warn('[TreasuryAgent] Safety: Balance too low, skipping transfer');
+          continue;
+        }
+
+        const result = await this.executeAction(action);
+        executed.push(result);
       }
 
-      const result = await this.executeAction(action);
-      executed.push(result);
+      console.log(`[TreasuryAgent] ✅ Cycle completed: ${executed.length} actions executed`);
+      return executed;
+    } catch (error) {
+      console.error('[TreasuryAgent] ❌ Run cycle failed:', error);
+      // Return a diagnostic action so caller knows what happened
+      return [{
+        type: 'get_block_info',
+        params: {},
+        success: false,
+        timestamp: new Date().toISOString(),
+        result: `Run cycle failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      }];
     }
-
-    console.log(`[TreasuryAgent] ✅ Cycle completed: ${executed.length} actions executed`);
-    return executed;
   }
 
   // ============================================
-  // MODEL INVOCATION (for subclass use)
+  // MODEL INVOCATION (for subclass use, with retry)
   // ============================================
 
   protected async callModel(systemPrompt: string, humanMessage: string): Promise<AgentAction[]> {
     try {
-      const response = await this.model.invoke([
-        new SystemMessage(systemPrompt),
-        new HumanMessage(humanMessage),
-      ]);
+      return await withRetry(
+        async () => {
+          const response = await this.model.invoke([
+            new SystemMessage(systemPrompt),
+            new HumanMessage(humanMessage),
+          ]);
 
-      let actions: AgentAction[] = [];
-      const text = response.content as string;
+          let actions: AgentAction[] = [];
+          const text = response.content as string;
 
-      try {
-        const jsonMatch = text.match(/```json\n([\s\S]*?)\n```/) || text.match(/\[[\s\S]*\]/);
-        actions = jsonMatch ? JSON.parse(jsonMatch[1] || jsonMatch[0]) : JSON.parse(text);
-      } catch {
-        actions = [];
-      }
+          try {
+            const jsonMatch = text.match(/```json\n([\s\S]*?)\n```/) || text.match(/\[[\s\S]*\]/);
+            actions = jsonMatch ? JSON.parse(jsonMatch[1] || jsonMatch[0]) : JSON.parse(text);
+          } catch {
+            actions = [];
+          }
 
-      return Array.isArray(actions) ? actions : [];
+          return Array.isArray(actions) ? actions : [];
+        },
+        {
+          maxRetries: this.config.maxRetries ?? 3,
+          delayMs: this.config.retryDelayMs ?? 2000,
+          backoffMultiplier: 2,
+          label: 'callModel',
+        }
+      );
     } catch (error) {
-      console.error('[TreasuryAgent] callModel error:', error);
+      console.error('[TreasuryAgent] callModel error after retries:', error);
       return [];
     }
   }
@@ -437,5 +559,9 @@ Return an array of up to 3 actions, each with:
 
   getAgentAddress(): Address {
     return this.account.address;
+  }
+
+  getConfig(): AgentConfig {
+    return { ...this.config };
   }
 }

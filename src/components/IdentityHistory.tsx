@@ -16,10 +16,10 @@ export default function IdentityHistory() {
 
   useEffect(() => {
     // Fetch recent transactions to the Identity Registry contract
-    fetch(`https://testnet.arcscan.app/api/v2/addresses/${IDENTITY_REGISTRY}/transactions?limit=10`)
+    fetch(`https://testnet.arcscan.app/api/v2/addresses/${IDENTITY_REGISTRY}/transactions`)
       .then((r) => r.json())
       .then((data) => {
-        const items = data.items || [];
+        const items = (data.items || []).slice(0, 10);
         const mapped: IdentityTx[] = items.map((tx: Record<string, unknown>) => ({
           hash: tx.hash as string,
           from: (tx.from as { hash: string })?.hash || '',

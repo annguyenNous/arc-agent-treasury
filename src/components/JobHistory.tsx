@@ -19,10 +19,10 @@ export default function JobHistory() {
 
   useEffect(() => {
     // Fetch recent transactions to the Agentic Commerce contract from ArcScan API
-    fetch(`https://testnet.arcscan.app/api/v2/addresses/${AGENTIC_COMMERCE}/transactions?limit=20`)
+    fetch(`https://testnet.arcscan.app/api/v2/addresses/${AGENTIC_COMMERCE}/transactions`)
       .then((r) => r.json())
       .then((data) => {
-        const items = data.items || [];
+        const items = (data.items || []).slice(0, 20);
         const mapped: JobTx[] = items.map((tx: Record<string, unknown>) => ({
           hash: tx.hash as string,
           method: (tx.method as string) || 'unknown',

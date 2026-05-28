@@ -54,6 +54,15 @@ ArcAgent Treasury enables autonomous AI agents to manage treasury operations on 
 | ERC-8183 Agentic Commerce | [`0x0747EEf0706327138c69792bF28Cd525089e4583`](https://testnet.arcscan.app/address/0x0747EEf0706327138c69792bF28Cd525089e4583) | ✅ |
 | USDC | [`0x3600000000000000000000000000000000000000`](https://testnet.arcscan.app/address/0x3600000000000000000000000000000000000000) | ✅ |
 | AgentTreasury | [`0x32faE7187a00f096B0536Ad4872fb324Bae39671`](https://testnet.arcscan.app/address/0x32faE7187a00f096B0536Ad4872fb324Bae39671) | ✅ |
+| TreasuryTimelock | [`0x68c01b103134E1b6661720dC7EBfE36bf03Cf51f`](https://testnet.arcscan.app/address/0x68c01b103134E1b6661720dC7EBfE36bf03Cf51f) | ⏳ |
+
+### Governance
+
+AgentTreasury ownership is controlled by TreasuryTimelock (1-hour delay):
+- All owner operations (pause, unpause, updateBudget, updateReputation) require timelock delay
+- Proposer: deployer multisig
+- Executor: anyone (public execution after delay)
+- Emergency: timelock can pause/unpause with 1-hour delay
 
 ## Deploy & Verify AgentTreasury
 

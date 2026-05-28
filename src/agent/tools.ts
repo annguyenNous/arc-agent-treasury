@@ -87,15 +87,38 @@ export class RebalanceYieldTool extends Tool {
         functionName: 'balanceOf',
         args: [this.account.address],
       });
+      const balanceFormatted = formatUnits(balance, 6);
 
       if (balance < thresholdAmount) {
-        return `No rebalance needed. Balance: ${formatUnits(balance, 6)} USDC (threshold: ${threshold} USDC)`;
+        return JSON.stringify({
+          status: 'no_action_needed',
+          currentBalance: balanceFormatted,
+          threshold,
+          idleAmount: '0',
+          recommendation: 'Balance is below threshold. No rebalancing needed.',
+        });
       }
 
-      // In production, this would call a yield vault contract
-      // For now, we log the rebalance opportunity
+      // Calculate idle amount above threshold
       const idleAmount = balance - thresholdAmount;
-      return `Rebalance opportunity: ${formatUnits(idleAmount, 6)} USDC idle. Balance: ${formatUnits(balance, 6)} USDC. Consider moving to yield vault.`;
+      const idleFormatted = formatUnits(idleAmount, 6);
+
+      // Keep 20% of idle as operational buffer
+      const bufferAmount = (idleAmount * 20n) / 100n;
+      const rebalanceAmount = idleAmount - bufferAmount;
+      const rebalanceFormatted = formatUnits(rebalanceAmount, 6);
+      const bufferFormatted = formatUnits(bufferAmount, 6);
+
+      return JSON.stringify({
+        status: 'rebalance_recommended',
+        currentBalance: balanceFormatted,
+        threshold,
+        idleAmount: idleFormatted,
+        bufferRetained: bufferFormatted,
+        recommendedRebalanceAmount: rebalanceFormatted,
+        recommendation: `Move ${rebalanceFormatted} USDC to yield pool. Keep ${bufferFormatted} USDC as operational buffer (20% of idle funds).`,
+        action: 'rebalance_yield',
+      });
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       return `Rebalance check failed: ${message}`;
@@ -181,35 +204,46 @@ export class VerifyInvoiceTool extends Tool {
     try {
       const { invoiceId, amount, vendor, description } = JSON.parse(input);
       
-      // In production, this would:
-      // 1. Verify invoice on IPFS/blockchain
-      // 2. Check against budget
-      // 3. Auto-approve if within limits
-      
-      const verificationResult = {
+      // Validate required fields
+      const errors: string[] = [];
+      if (!invoiceId) errors.push('Missing invoiceId');
+      if (!amount) errors.push('Missing amount');
+      if (!vendor) errors.push('Missing vendor address');
+      if (!description) errors.push('Missing description');
+
+      if (errors.length > 0) {
+        return JSON.stringify({
+          status: 'validation_failed',
+          errors,
+          recommendation: 'Fix missing fields before resubmitting.',
+        });
+      }
+
+      const amountNum = parseFloat(amount);
+
+      // Check if amount is reasonable
+      if (amountNum >= 10000) {
+        return JSON.stringify({
+          status: 'pending_approval',
+          invoiceId,
+          amount,
+          vendor,
+          description,
+          warning: 'Amount exceeds 10000 USDC threshold. Requires senior approval.',
+          recommendation: 'Escalate to treasury manager for manual review.',
+        });
+      }
+
+      // Return verification result — NO auto-pay
+      return JSON.stringify({
+        status: 'pending_approval',
         invoiceId,
         amount,
         vendor,
         description,
-        status: 'verified',
-        autoApproved: parseFloat(amount) < 1000, // Auto-approve if < 1000 USDC
-      };
-
-      if (verificationResult.autoApproved) {
-        // Auto-pay
-        const hash = await this.walletClient.writeContract({
-          chain: arcTestnet,
-          account: this.account,
-          address: USDC_ADDRESS,
-          abi: USDC_ABI,
-          functionName: 'transfer',
-          args: [vendor as Address, parseUnits(amount, 6)],
-        });
-        
-        return `Invoice ${invoiceId} verified and auto-paid! ${amount} USDC to ${vendor}. TX: ${hash}`;
-      }
-
-      return `Invoice ${invoiceId} verified. Amount: ${amount} USDC. Requires manual approval (>1000 USDC).`;
+        amountCheck: amountNum < 10000 ? 'within_limit' : 'exceeds_limit',
+        recommendation: 'Invoice verified. Awaiting manual approval before payment.',
+      });
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       return `Invoice verification failed: ${message}`;

@@ -86,6 +86,34 @@ const TREASURY_ABI = [
       { name: 'createdAt', type: 'uint256' },
     ],
   },
+  {
+    name: 'agentCount',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ name: '', type: 'uint256' }],
+  },
+  {
+    name: 'paymentCount',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ name: '', type: 'uint256' }],
+  },
+  {
+    name: 'totalAllocated',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ name: '', type: 'uint256' }],
+  },
+  {
+    name: 'totalReserved',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ name: '', type: 'uint256' }],
+  },
 ] as const;
 
 // ============================================
@@ -108,6 +136,42 @@ export function useAgentInfo(agentId: number) {
     functionName: 'agents',
     args: [BigInt(agentId)],
     query: { enabled: agentId > 0 },
+  });
+}
+
+export function useAgentCount() {
+  return useReadContract({
+    address: TREASURY_ADDRESS,
+    abi: TREASURY_ABI,
+    functionName: 'agentCount',
+    query: { refetchInterval: 10000 },
+  });
+}
+
+export function usePaymentCount() {
+  return useReadContract({
+    address: TREASURY_ADDRESS,
+    abi: TREASURY_ABI,
+    functionName: 'paymentCount',
+    query: { refetchInterval: 10000 },
+  });
+}
+
+export function useTotalAllocated() {
+  return useReadContract({
+    address: TREASURY_ADDRESS,
+    abi: TREASURY_ABI,
+    functionName: 'totalAllocated',
+    query: { refetchInterval: 10000 },
+  });
+}
+
+export function useTotalReserved() {
+  return useReadContract({
+    address: TREASURY_ADDRESS,
+    abi: TREASURY_ABI,
+    functionName: 'totalReserved',
+    query: { refetchInterval: 10000 },
   });
 }
 
@@ -201,3 +265,6 @@ export function useExecutePayment() {
 
   return { executePayment, txHash, isPending, isConfirming, isSuccess };
 }
+
+// Treasury address export for use in other components
+export { TREASURY_ADDRESS, TREASURY_ABI };

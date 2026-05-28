@@ -272,32 +272,39 @@ export class TreasuryAgent {
   // ============================================
 
   async analyze(context: AgentContext): Promise<AgentAction[]> {
-    const systemPrompt = `Bạn là ArcAgent Treasury, AI agent quản lý USDC trên ARC Network.
+    const systemPrompt = `You are ArcAgent Treasury, an AI agent managing USDC on ARC Network.
 
-TOOLS CÓ SẴN:
-- check_balance: Kiểm tra số dư USDC. Input: address (0x...)
-- transfer_usdc: Chuyển USDC. Input: JSON {"to": "0x...", "amount": "10.5"}
-- register_agent: Đăng ký agent ERC-8004. Input: metadataURI (string)
-- create_job: Tạo job ERC-8183. Input: JSON {"provider": "0x...", "description": "...", "duration": 86400}
-- get_block_info: Lấy thông tin block hiện tại. Input: (none)
+AVAILABLE TOOLS:
+- check_balance: Check USDC balance of an address. Input: address (0x...)
+- transfer_usdc: Transfer USDC to an address. Input: JSON {"to": "0x...", "amount": "10.5"}
+- register_agent: Register agent on ERC-8004 identity registry. Input: metadataURI (string)
+- create_job: Create ERC-8183 job/task. Input: JSON {"provider": "0x...", "description": "...", "duration": 86400}
+- get_block_info: Get current block info. Input: (none)
+- create_escrow: Create USDC escrow for freelancer/gig worker. Input: JSON {"amount": "100", "recipient": "0x...", "taskId": "task-001", "releaseCondition": "auto_after_days"}
+- rebalance_yield: Check idle USDC and recommend rebalancing to yield pool. Input: JSON {"threshold": "100"}
+- process_payroll: Process batch payroll payments. Input: JSON {"payments": [{"to": "0x...", "amount": "1000", "label": "salary"}]}
+- verify_invoice: Verify an invoice and prepare for approval. Input: JSON {"invoiceId": "INV-001", "amount": "500", "vendor": "0x...", "description": "Server hosting"}
 
-TRẠNG THÁI HIỆN TẠI:
+CURRENT STATE:
 - Wallet: ${context.address}
 - Balance: ${context.balanceFormatted} USDC
 - Network: ${context.network} (Chain ID: ${context.chainId})
 
-QUY TẮC AN TOÀN:
-1. KHÔNG chuyển nếu balance < 1 USDC
-2. KHÔNG chuyển quá 50% balance
-3. Luôn check balance trước khi transfer
+SAFETY RULES:
+1. NEVER transfer if balance < 1 USDC
+2. NEVER transfer more than 50% of balance
+3. ALWAYS check balance before any transfer
+4. NEVER auto-pay invoices — always require manual approval
+5. NEVER auto-transfer for rebalancing — only recommend
+6. Keep at least 20% of idle funds as operational buffer
 
-Trả về array actions tối đa 3 actions, mỗi action có:
+Return an array of up to 3 actions, each with:
 {
-  "type": "check_balance" | "transfer_usdc" | "register_agent" | "create_job" | "get_block_info",
+  "type": "check_balance" | "transfer_usdc" | "register_agent" | "create_job" | "get_block_info" | "create_escrow" | "rebalance_yield" | "process_payroll" | "verify_invoice",
   "params": { ... }
 }`;
 
-    const humanMessage = `Phân tích treasury và đề xuất actions ngay bây giờ.`;
+    const humanMessage = `Analyze the treasury and recommend actions now.`;
 
     try {
       const response = await this.model.invoke([
@@ -342,7 +349,7 @@ Trả về array actions tối đa 3 actions, mỗi action có:
       const executedAction: AgentAction = {
         ...action,
         result,
-        success: result.includes('successful') || result.includes('registered') || result.includes('created'),
+        success: !result.includes('failed') && !result.includes('Error') && !result.includes('error'),
         timestamp: new Date().toISOString(),
       };
 
@@ -390,6 +397,34 @@ Trả về array actions tối đa 3 actions, mỗi action có:
 
     console.log(`[TreasuryAgent] ✅ Cycle completed: ${executed.length} actions executed`);
     return executed;
+  }
+
+  // ============================================
+  // MODEL INVOCATION (for subclass use)
+  // ============================================
+
+  protected async callModel(systemPrompt: string, humanMessage: string): Promise<AgentAction[]> {
+    try {
+      const response = await this.model.invoke([
+        new SystemMessage(systemPrompt),
+        new HumanMessage(humanMessage),
+      ]);
+
+      let actions: AgentAction[] = [];
+      const text = response.content as string;
+
+      try {
+        const jsonMatch = text.match(/```json\n([\s\S]*?)\n```/) || text.match(/\[[\s\S]*\]/);
+        actions = jsonMatch ? JSON.parse(jsonMatch[1] || jsonMatch[0]) : JSON.parse(text);
+      } catch {
+        actions = [];
+      }
+
+      return Array.isArray(actions) ? actions : [];
+    } catch (error) {
+      console.error('[TreasuryAgent] callModel error:', error);
+      return [];
+    }
   }
 
   // ============================================

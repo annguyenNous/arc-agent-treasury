@@ -8,6 +8,8 @@ import { TreasuryAgent } from '@/agent/TreasuryAgent';
 import { PortfolioManager } from '@/agent/portfolio';
 import { loadConfig } from '@/agent/config';
 import { Logger } from '@/agent/logger';
+import { validateApiKey } from '@/app/api/middleware';
+import { checkRateLimit } from '@/app/api/rate-limit';
 
 const log = new Logger('api');
 
@@ -16,10 +18,16 @@ let agent: TreasuryAgent | null = null;
 let portfolioManager: PortfolioManager | null = null;
 
 // ============================================
-// GET: Health Check
+// GET: Health Check (public)
 // ============================================
 
 export async function GET(request: NextRequest) {
+  // Rate limit all requests including GET
+  const rateLimitResult = checkRateLimit(request);
+  if (!rateLimitResult.allowed) {
+    return rateLimitResult.response;
+  }
+
   const { searchParams } = new URL(request.url);
   const action = searchParams.get('action');
 
@@ -64,10 +72,22 @@ export async function GET(request: NextRequest) {
 }
 
 // ============================================
-// POST: Control Actions
+// POST: Control Actions (authenticated)
 // ============================================
 
 export async function POST(request: NextRequest) {
+  // Rate limit
+  const rateLimitResult = checkRateLimit(request);
+  if (!rateLimitResult.allowed) {
+    return rateLimitResult.response;
+  }
+
+  // Authenticate
+  const authError = validateApiKey(request);
+  if (authError) {
+    return authError;
+  }
+
   try {
     const body = await request.json();
     const { action } = body;

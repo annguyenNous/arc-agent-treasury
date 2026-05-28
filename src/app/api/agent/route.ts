@@ -1,12 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { TreasuryAgent } from '@/agent/TreasuryAgent';
 import { getCronManager, startTreasuryCron } from '@/agent/CronManager';
+import { validateApiKey } from '@/app/api/middleware';
+import { checkRateLimit } from '@/app/api/rate-limit';
 
 // ============================================
-// GET: Agent Status
+// GET: Agent Status (public)
 // ============================================
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  // Rate limit all requests including GET
+  const rateLimitResult = checkRateLimit(request);
+  if (!rateLimitResult.allowed) {
+    return rateLimitResult.response;
+  }
+
   try {
     const manager = getCronManager();
     const jobs = manager.getAllJobs();
@@ -33,10 +41,22 @@ export async function GET() {
 }
 
 // ============================================
-// POST: Trigger Agent or Start Cron
+// POST: Trigger Agent or Start Cron (authenticated)
 // ============================================
 
 export async function POST(request: NextRequest) {
+  // Rate limit
+  const rateLimitResult = checkRateLimit(request);
+  if (!rateLimitResult.allowed) {
+    return rateLimitResult.response;
+  }
+
+  // Authenticate
+  const authError = validateApiKey(request);
+  if (authError) {
+    return authError;
+  }
+
   try {
     const body = await request.json();
     const { action, intervalMinutes, maxRuns } = body;

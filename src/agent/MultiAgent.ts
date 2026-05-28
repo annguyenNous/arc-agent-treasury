@@ -15,6 +15,88 @@ export interface SpecializedAgentConfig extends AgentConfig {
 }
 
 // ============================================
+// SPECIALIZED SYSTEM PROMPTS
+// ============================================
+
+const PAYROLL_SYSTEM_PROMPT = `You are a Payroll Processing Agent on ARC Network.
+Your focus: salary payments, batch payroll, wage distribution.
+
+AVAILABLE TOOLS:
+- process_payroll: Process batch payroll payments. Input: JSON {"payments": [{"to": "0x...", "amount": "1000", "label": "salary"}]}
+- check_balance: Check USDC balance. Input: address (0x...)
+- transfer_usdc: Transfer USDC. Input: JSON {"to": "0x...", "amount": "10.5"}
+
+SAFETY RULES:
+1. ALWAYS check balance before payroll processing
+2. NEVER exceed 50% of balance in a single payroll batch
+3. Max 10 payments per batch
+4. Report total amount before executing
+
+Return an array of up to 5 actions with "type" and "params".`;
+
+const YIELD_SYSTEM_PROMPT = `You are a Yield Optimization Agent on ARC Network.
+Your focus: yield farming, rebalancing idle USDC, maximizing returns.
+
+AVAILABLE TOOLS:
+- rebalance_yield: Check idle USDC and recommend rebalancing to yield pool. Input: JSON {"threshold": "100"}
+- check_balance: Check USDC balance. Input: address (0x...)
+
+SAFETY RULES:
+1. NEVER auto-transfer — only recommend rebalancing
+2. Keep at least 20% of idle funds as operational buffer
+3. Monitor threshold continuously
+4. Report current balance vs threshold before any recommendation
+
+Return an array of up to 2 actions with "type" and "params".`;
+
+const INVOICE_SYSTEM_PROMPT = `You are an Invoice Verification Agent on ARC Network.
+Your focus: invoice validation, approval workflows, payment preparation.
+
+AVAILABLE TOOLS:
+- verify_invoice: Verify an invoice and prepare for approval. Input: JSON {"invoiceId": "INV-001", "amount": "500", "vendor": "0x...", "description": "Server hosting"}
+- check_balance: Check USDC balance. Input: address (0x...)
+
+SAFETY RULES:
+1. NEVER auto-pay invoices — always require manual approval
+2. Validate all required fields (invoiceId, amount, vendor, description)
+3. Flag invoices >= 10000 USDC for senior approval
+4. Check balance can cover invoice before recommending approval
+
+Return an array of up to 4 actions with "type" and "params".`;
+
+const LIQUIDITY_SYSTEM_PROMPT = `You are a Liquidity Management Agent on ARC Network.
+Your focus: liquidity pools, LP positions, pool operations, balance monitoring.
+
+AVAILABLE TOOLS:
+- check_balance: Check USDC balance. Input: address (0x...)
+- transfer_usdc: Transfer USDC. Input: JSON {"to": "0x...", "amount": "10.5"}
+- get_block_info: Get current block info. Input: (none)
+
+SAFETY RULES:
+1. Monitor balance regularly
+2. NEVER transfer more than 50% of balance
+3. ALWAYS check balance before transfers
+4. Report current liquidity position before changes
+
+Return an array of up to 3 actions with "type" and "params".`;
+
+const ESCROW_SYSTEM_PROMPT = `You are an Escrow Operations Agent on ARC Network.
+Your focus: escrow creation, milestone tracking, freelancer payments, gig worker payouts.
+
+AVAILABLE TOOLS:
+- create_escrow: Create USDC escrow for freelancer/gig worker. Input: JSON {"amount": "100", "recipient": "0x...", "taskId": "task-001", "releaseCondition": "auto_after_days"}
+- check_balance: Check USDC balance. Input: address (0x...)
+- create_job: Create ERC-8183 job/task. Input: JSON {"provider": "0x...", "description": "...", "duration": 86400}
+
+SAFETY RULES:
+1. ALWAYS check balance before creating escrow
+2. NEVER escrow more than 50% of balance
+3. Use reasonable release conditions (7 days default)
+4. Track task IDs for all escrows
+
+Return an array of up to 3 actions with "type" and "params".`;
+
+// ============================================
 // SPECIALIZED AGENTS
 // ============================================
 
@@ -26,7 +108,17 @@ export class PayrollAgent extends TreasuryAgent {
     });
   }
 
-  // PayrollAgent uses default analyze from TreasuryAgent
+  async analyze(context: import('./TreasuryAgent').AgentContext): Promise<AgentAction[]> {
+    const systemPrompt = `${PAYROLL_SYSTEM_PROMPT}
+
+CURRENT STATE:
+- Wallet: ${context.address}
+- Balance: ${context.balanceFormatted} USDC
+- Network: ${context.network} (Chain ID: ${context.chainId})`;
+
+    const humanMessage = `Analyze payroll requirements and recommend actions now.`;
+    return this.callModel(systemPrompt, humanMessage);
+  }
 }
 
 export class YieldAgent extends TreasuryAgent {
@@ -37,7 +129,17 @@ export class YieldAgent extends TreasuryAgent {
     });
   }
 
-  // YieldAgent uses default analyze from TreasuryAgent
+  async analyze(context: import('./TreasuryAgent').AgentContext): Promise<AgentAction[]> {
+    const systemPrompt = `${YIELD_SYSTEM_PROMPT}
+
+CURRENT STATE:
+- Wallet: ${context.address}
+- Balance: ${context.balanceFormatted} USDC
+- Network: ${context.network} (Chain ID: ${context.chainId})`;
+
+    const humanMessage = `Analyze yield opportunities and recommend rebalancing actions now.`;
+    return this.callModel(systemPrompt, humanMessage);
+  }
 }
 
 export class InvoiceAgent extends TreasuryAgent {
@@ -48,7 +150,17 @@ export class InvoiceAgent extends TreasuryAgent {
     });
   }
 
-  // InvoiceAgent uses default analyze from TreasuryAgent
+  async analyze(context: import('./TreasuryAgent').AgentContext): Promise<AgentAction[]> {
+    const systemPrompt = `${INVOICE_SYSTEM_PROMPT}
+
+CURRENT STATE:
+- Wallet: ${context.address}
+- Balance: ${context.balanceFormatted} USDC
+- Network: ${context.network} (Chain ID: ${context.chainId})`;
+
+    const humanMessage = `Analyze pending invoices and recommend verification actions now.`;
+    return this.callModel(systemPrompt, humanMessage);
+  }
 }
 
 export class LiquidityAgent extends TreasuryAgent {
@@ -59,7 +171,17 @@ export class LiquidityAgent extends TreasuryAgent {
     });
   }
 
-  // LiquidityAgent uses default analyze from TreasuryAgent
+  async analyze(context: import('./TreasuryAgent').AgentContext): Promise<AgentAction[]> {
+    const systemPrompt = `${LIQUIDITY_SYSTEM_PROMPT}
+
+CURRENT STATE:
+- Wallet: ${context.address}
+- Balance: ${context.balanceFormatted} USDC
+- Network: ${context.network} (Chain ID: ${context.chainId})`;
+
+    const humanMessage = `Analyze liquidity position and recommend actions now.`;
+    return this.callModel(systemPrompt, humanMessage);
+  }
 }
 
 export class EscrowAgent extends TreasuryAgent {
@@ -70,7 +192,17 @@ export class EscrowAgent extends TreasuryAgent {
     });
   }
 
-  // EscrowAgent uses default analyze from TreasuryAgent
+  async analyze(context: import('./TreasuryAgent').AgentContext): Promise<AgentAction[]> {
+    const systemPrompt = `${ESCROW_SYSTEM_PROMPT}
+
+CURRENT STATE:
+- Wallet: ${context.address}
+- Balance: ${context.balanceFormatted} USDC
+- Network: ${context.network} (Chain ID: ${context.chainId})`;
+
+    const humanMessage = `Analyze escrow requirements and recommend actions now.`;
+    return this.callModel(systemPrompt, humanMessage);
+  }
 }
 
 // ============================================

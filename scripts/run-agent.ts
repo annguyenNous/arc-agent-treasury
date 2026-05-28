@@ -45,7 +45,7 @@ async function runOnce(): Promise<void> {
     maxActionsPerCycle: 5,
   });
 
-  console.log(`Agent Address: ${agent.getAddress()}`);
+  console.log(`Agent Address: ${agent.getAgentAddress()}`);
   console.log('Starting analysis...\n');
 
   const results = await agent.run();

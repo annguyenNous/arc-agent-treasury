@@ -38,7 +38,7 @@ contract AgentTreasury is Ownable, ReentrancyGuard {
         uint256 maxExecutions;   // Max executions (0 = unlimited)
         string label;            // Payment description
         bool active;
-        address agentId;         // Which agent executes this
+        uint256 agentId;         // Which agent executes this
     }
 
     struct TreasuryAllocation {
@@ -67,6 +67,8 @@ contract AgentTreasury is Ownable, ReentrancyGuard {
     // Treasury
     uint256 public totalDeposited;
     uint256 public totalSpent;
+    uint256 public totalAllocated;
+    uint256 public totalReserved;
 
     // ============================================
     // EVENTS
@@ -115,13 +117,12 @@ contract AgentTreasury is Ownable, ReentrancyGuard {
     /// @notice Get treasury balance and allocation info
     function getTreasuryInfo() external view returns (TreasuryAllocation memory) {
         uint256 balance = usdc.balanceOf(address(this));
-        uint256 allocated = _totalAllocated();
         
         return TreasuryAllocation({
             totalBalance: balance,
-            allocatedToAgents: allocated,
-            reservedForPayments: _totalReserved(),
-            available: balance > allocated ? balance - allocated : 0
+            allocatedToAgents: totalAllocated,
+            reservedForPayments: totalReserved,
+            available: balance > totalAllocated ? balance - totalAllocated : 0
         });
     }
 
@@ -156,6 +157,7 @@ contract AgentTreasury is Ownable, ReentrancyGuard {
         });
 
         ownerAgents[msg.sender].push(agentId);
+        totalAllocated += budget;
         
         emit AgentRegistered(agentId, msg.sender, name, agentType);
         return agentId;
@@ -168,6 +170,7 @@ contract AgentTreasury is Ownable, ReentrancyGuard {
         
         uint256 oldBudget = agent.budget;
         agent.budget = newBudget;
+        totalAllocated += (newBudget - oldBudget);
         
         emit AgentBudgetUpdated(agentId, oldBudget, newBudget);
     }
@@ -177,6 +180,9 @@ contract AgentTreasury is Ownable, ReentrancyGuard {
         Agent storage agent = agents[agentId];
         require(agent.owner == msg.sender || msg.sender == owner(), "Not authorized");
         
+        if (agent.active) {
+            totalAllocated -= agent.budget;
+        }
         agent.active = false;
         emit AgentDeactivated(agentId);
     }
@@ -230,10 +236,11 @@ contract AgentTreasury is Ownable, ReentrancyGuard {
             maxExecutions: maxExecutions,
             label: label,
             active: true,
-            agentId: msg.sender
+            agentId: agentId
         });
 
-        agentPayments[msg.sender].push(paymentId);
+        agentPayments[agents[agentId].owner].push(paymentId);
+        totalReserved += amount;
         
         emit PaymentScheduled(paymentId, recipient, amount, label);
         return paymentId;
@@ -258,6 +265,11 @@ contract AgentTreasury is Ownable, ReentrancyGuard {
         payment.nextExecution = block.timestamp + payment.interval;
         totalSpent += payment.amount;
 
+        // Decrement totalReserved for one-time or last execution
+        if (payment.interval == 0 || (payment.maxExecutions > 0 && payment.totalExecutions >= payment.maxExecutions)) {
+            totalReserved -= payment.amount;
+        }
+
         emit PaymentExecuted(paymentId, payment.recipient, payment.amount);
     }
 
@@ -265,10 +277,13 @@ contract AgentTreasury is Ownable, ReentrancyGuard {
     function cancelPayment(uint256 paymentId) external {
         ScheduledPayment storage payment = scheduledPayments[paymentId];
         require(
-            payment.agentId == msg.sender || msg.sender == owner(),
+            agents[payment.agentId].owner == msg.sender || msg.sender == owner(),
             "Not authorized"
         );
         
+        if (payment.active) {
+            totalReserved -= payment.amount;
+        }
         payment.active = false;
         emit PaymentCancelled(paymentId);
     }
@@ -284,22 +299,26 @@ contract AgentTreasury is Ownable, ReentrancyGuard {
     }
 
     // ============================================
-    // INTERNAL
+    // VIEW FUNCTIONS
     // ============================================
 
-    function _totalAllocated() internal view returns (uint256 total) {
-        for (uint256 i = 1; i <= agentCount; i++) {
-            if (agents[i].active) {
-                total += agents[i].budget;
-            }
-        }
+    /// @notice Get total number of registered agents
+    function getAgentCount() external view returns (uint256) {
+        return agentCount;
     }
 
-    function _totalReserved() internal view returns (uint256 total) {
-        for (uint256 i = 1; i <= paymentCount; i++) {
-            if (scheduledPayments[i].active) {
-                total += scheduledPayments[i].amount;
-            }
-        }
+    /// @notice Get total number of scheduled payments
+    function getPaymentCount() external view returns (uint256) {
+        return paymentCount;
+    }
+
+    /// @notice Get total allocated to agents
+    function getTotalAllocated() external view returns (uint256) {
+        return totalAllocated;
+    }
+
+    /// @notice Get total reserved for scheduled payments
+    function getTotalReserved() external view returns (uint256) {
+        return totalReserved;
     }
 }

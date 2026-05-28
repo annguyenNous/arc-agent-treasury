@@ -292,7 +292,7 @@ class DepositToTreasuryTool extends Tool {
       const { amount } = JSON.parse(input);
       const parsedAmount = parseUnits(amount, 6);
       
-      // First approve
+      // First approve USDC spending
       const approveHash = await this.walletClient.writeContract({
         chain: arcTestnet,
         account: this.account,
@@ -301,6 +301,9 @@ class DepositToTreasuryTool extends Tool {
         functionName: 'approve',
         args: [AGENT_TREASURY, parsedAmount],
       });
+      
+      // Wait for approval to be mined (3 second delay)
+      await new Promise(resolve => setTimeout(resolve, 3000));
       
       // Then deposit
       const depositHash = await this.walletClient.writeContract({

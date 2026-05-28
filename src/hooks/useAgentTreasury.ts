@@ -114,6 +114,91 @@ const TREASURY_ABI = [
     inputs: [],
     outputs: [{ name: '', type: 'uint256' }],
   },
+  {
+    name: 'checkUpkeep',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [{ name: 'checkData', type: 'bytes' }],
+    outputs: [
+      { name: 'upkeepNeeded', type: 'bool' },
+      { name: 'performData', type: 'bytes' },
+    ],
+  },
+  {
+    name: 'performUpkeep',
+    type: 'function',
+    stateMutability: 'nonpayable',
+    inputs: [{ name: 'performData', type: 'bytes' }],
+    outputs: [],
+  },
+  {
+    name: 'getReadyPayments',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ name: 'ids', type: 'uint256[]' }],
+  },
+  {
+    name: 'getPayment',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [{ name: 'paymentId', type: 'uint256' }],
+    outputs: [
+      {
+        name: '',
+        type: 'tuple',
+        components: [
+          { name: 'id', type: 'uint256' },
+          { name: 'recipient', type: 'address' },
+          { name: 'amount', type: 'uint256' },
+          { name: 'interval', type: 'uint256' },
+          { name: 'nextExecution', type: 'uint256' },
+          { name: 'totalExecutions', type: 'uint256' },
+          { name: 'maxExecutions', type: 'uint256' },
+          { name: 'label', type: 'string' },
+          { name: 'active', type: 'bool' },
+          { name: 'agentId', type: 'uint256' },
+        ],
+      },
+    ],
+  },
+  {
+    name: 'getAgent',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [{ name: 'agentId', type: 'uint256' }],
+    outputs: [
+      {
+        name: '',
+        type: 'tuple',
+        components: [
+          { name: 'agentId', type: 'uint256' },
+          { name: 'owner', type: 'address' },
+          { name: 'name', type: 'string' },
+          { name: 'agentType', type: 'string' },
+          { name: 'budget', type: 'uint256' },
+          { name: 'spent', type: 'uint256' },
+          { name: 'reputation', type: 'uint256' },
+          { name: 'active', type: 'bool' },
+          { name: 'createdAt', type: 'uint256' },
+        ],
+      },
+    ],
+  },
+  {
+    name: 'cancelPayment',
+    type: 'function',
+    stateMutability: 'nonpayable',
+    inputs: [{ name: 'paymentId', type: 'uint256' }],
+    outputs: [],
+  },
+  {
+    name: 'emergencyPause',
+    type: 'function',
+    stateMutability: 'nonpayable',
+    inputs: [],
+    outputs: [],
+  },
 ] as const;
 
 // ============================================

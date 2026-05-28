@@ -35,6 +35,7 @@ export default function RegisterAgent() {
     writeContract: writeIdentity,
     data: identityHash,
     isPending: isIdentityPending,
+    error: identityError,
   } = useWriteContract();
 
   const { isLoading: isIdentityConfirming, isSuccess: isIdentitySuccess } =
@@ -45,6 +46,8 @@ export default function RegisterAgent() {
     writeContract: writeTreasury,
     data: treasuryHash,
     isPending: isTreasuryPending,
+    error: treasuryError,
+    reset: resetTreasury,
   } = useWriteContract();
 
   const { isLoading: isTreasuryConfirming, isSuccess: isTreasurySuccess } =
@@ -98,14 +101,16 @@ export default function RegisterAgent() {
       // Try to parse tokenId from Transfer event in receipt logs
       // ERC-8004 register() emits Transfer(address(0), owner, tokenId)
       // The tokenId is in the 3rd topic (indexed param)
-      fetch(`https://testnet.arcscan.app/api/v2/transactions/${identityHash}`)
+      // Blockscout v2 API: /api/v2/transactions/{hash}/logs
+      fetch(`https://testnet.arcscan.app/api/v2/transactions/${identityHash}/logs`)
         .then((r) => r.json())
         .then((data) => {
-          if (data.logs && data.logs.length > 0) {
-            // Find Transfer event (topic[0] = Transfer signature)
-            const transferLog = data.logs.find(
+          const items = data.items || [];
+          if (items.length > 0) {
+            // Find Transfer event (topic[0] = keccak256("Transfer(address,address,uint256)"))
+            const transferLog = items.find(
               (log: { topics: string[] }) =>
-                log.topics[0] === '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef'
+                log.topics && log.topics[0] === '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef'
             );
             if (transferLog && transferLog.topics[3]) {
               const tokenId = BigInt(transferLog.topics[3]);
@@ -245,13 +250,50 @@ export default function RegisterAgent() {
             </div>
           )}
 
+          {treasuryError && (
+            <div className="bg-red-900/20 border border-red-800/30 rounded-lg p-3">
+              <p className="text-red-400 text-sm font-medium">Transaction failed</p>
+              <p className="text-red-300 text-xs mt-1 break-all">
+                {treasuryError.message?.slice(0, 200)}
+              </p>
+              <button
+                onClick={() => resetTreasury()}
+                className="mt-2 text-xs text-red-300 hover:text-white underline"
+              >
+                Try again
+              </button>
+            </div>
+          )}
+
+          {identityError && (
+            <div className="bg-red-900/20 border border-red-800/30 rounded-lg p-3">
+              <p className="text-red-400 text-sm">Identity registration error: {identityError.message?.slice(0, 100)}</p>
+            </div>
+          )}
+
           <button
-            onClick={() => identityTokenId && handleRegisterTreasury(identityTokenId)}
+            onClick={() => {
+              if (identityTokenId) {
+                handleRegisterTreasury(identityTokenId);
+              }
+            }}
             disabled={!budget || parseFloat(budget) <= 0 || !identityTokenId || isTreasuryPending || isTreasuryConfirming}
             className="w-full py-3 bg-gradient-to-r from-violet-600 to-purple-500 text-white font-semibold rounded-xl hover:from-violet-700 hover:to-purple-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
           >
-            {isTreasuryPending ? 'Confirming...' : isTreasuryConfirming ? 'Registering...' : `Register on AgentTreasury (${budget || '0'} USDC)`}
+            {!identityTokenId
+              ? 'Enter Token ID above to continue'
+              : isTreasuryPending
+              ? 'Confirm in wallet...'
+              : isTreasuryConfirming
+              ? 'Registering...'
+              : `Register on AgentTreasury (${budget || '0'} USDC)`}
           </button>
+
+          {!identityTokenId && (
+            <p className="text-xs text-yellow-500 text-center">
+              Token ID could not be auto-detected. Check the TX on explorer and enter the token ID manually.
+            </p>
+          )}
         </div>
       </div>
     );

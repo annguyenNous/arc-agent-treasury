@@ -1,6 +1,8 @@
 import Header from "@/components/Header";
 import TreasuryOverview from "@/components/TreasuryOverview";
 import DashboardAgents from "@/components/DashboardAgents";
+import DepositToTreasury from "@/components/DepositToTreasury";
+import RegisterOnTreasury from "@/components/RegisterOnTreasury";
 import PaymentScheduler from "@/components/PaymentScheduler";
 
 export default function Home() {
@@ -16,7 +18,6 @@ export default function Home() {
           </h1>
           <p className="text-gray-400 max-w-2xl mx-auto">
             Autonomous AI agents managing your payments, liquidity, and treasury on ARC Network.
-            Sub-second finality, USDC native gas, ERC-8004 identity.
           </p>
         </div>
 
@@ -41,6 +42,12 @@ export default function Home() {
         {/* Treasury Overview */}
         <div className="mb-8">
           <TreasuryOverview />
+        </div>
+
+        {/* Quick Actions: Deposit + Register */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+          <DepositToTreasury />
+          <RegisterOnTreasury />
         </div>
 
         {/* Main Grid */}
@@ -70,7 +77,7 @@ export default function Home() {
             </div>
             <h3 className="text-lg font-semibold text-white mb-2">Sub-Second Finality</h3>
             <p className="text-sm text-gray-400">
-              ARC Network confirms transactions in under 1 second. Perfect for real-time treasury operations.
+              ARC Network confirms transactions in under 1 second.
             </p>
           </div>
 
@@ -82,7 +89,7 @@ export default function Home() {
             </div>
             <h3 className="text-lg font-semibold text-white mb-2">ERC-8004 Identity</h3>
             <p className="text-sm text-gray-400">
-              Onchain agent identity with reputation tracking. Build trust through verified credentials.
+              Onchain agent identity with reputation tracking.
             </p>
           </div>
 
@@ -94,17 +101,15 @@ export default function Home() {
             </div>
             <h3 className="text-lg font-semibold text-white mb-2">USDC Native Gas</h3>
             <p className="text-sm text-gray-400">
-              Predictable fees in USDC. No volatile ETH gas costs. Budget with confidence.
+              Predictable fees in USDC. No volatile ETH gas costs.
             </p>
           </div>
         </div>
       </main>
 
-      {/* Footer */}
       <footer className="border-t border-gray-800 mt-16">
         <div className="max-w-7xl mx-auto px-4 py-8 text-center text-sm text-gray-500">
           <p>Built on ARC Network · Powered by Circle · ERC-8004 + ERC-8183</p>
-          <p className="mt-1">AI Agents for Autonomous Treasury Management</p>
         </div>
       </footer>
     </div>

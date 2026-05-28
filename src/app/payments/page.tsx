@@ -1,5 +1,6 @@
 import Header from "@/components/Header";
 import PaymentScheduler from "@/components/PaymentScheduler";
+import PaymentHistory from "@/components/PaymentHistory";
 
 export default function PaymentsPage() {
   return (
@@ -16,8 +17,9 @@ export default function PaymentsPage() {
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Payment Scheduler */}
-          <div className="lg:col-span-2">
+          <div className="lg:col-span-2 space-y-6">
             <PaymentScheduler />
+            <PaymentHistory />
           </div>
 
           {/* Payment Types */}

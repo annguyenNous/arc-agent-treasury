@@ -1,5 +1,6 @@
 import Header from "@/components/Header";
 import CreateJob from "@/components/CreateJob";
+import JobHistory from "@/components/JobHistory";
 
 export default function JobsPage() {
   return (
@@ -20,8 +21,11 @@ export default function JobsPage() {
             <CreateJob />
           </div>
 
-          {/* Job Lifecycle Info */}
+          {/* Job History + Info */}
           <div className="lg:col-span-2 space-y-6">
+            {/* Job History from on-chain */}
+            <JobHistory />
+
             {/* How it works */}
             <div className="bg-gray-900 rounded-2xl p-6 border border-gray-800">
               <h2 className="text-lg font-semibold text-white mb-4">ERC-8183 Job Lifecycle</h2>
@@ -47,29 +51,17 @@ export default function JobsPage() {
               </div>
             </div>
 
-            {/* Active Jobs */}
-            <div className="bg-gray-900 rounded-2xl p-6 border border-gray-800">
-              <h2 className="text-lg font-semibold text-white mb-4">Active Jobs</h2>
-              <div className="text-center py-8">
-                <svg className="w-12 h-12 text-gray-600 mx-auto mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                </svg>
-                <p className="text-gray-400">No active jobs</p>
-                <p className="text-gray-500 text-sm mt-1">Create a job to get started with AI agent automation</p>
-              </div>
-            </div>
-
             {/* Contract Info */}
             <div className="bg-gray-900/50 rounded-2xl p-6 border border-gray-800">
               <h3 className="text-sm font-semibold text-white mb-3">Contract Addresses (ARC Testnet)</h3>
               <div className="space-y-2">
                 <div className="flex justify-between items-center">
                   <span className="text-xs text-gray-500">Agentic Commerce</span>
-                  <span className="text-xs font-mono text-violet-400">0x0747EE...4583</span>
+                  <a href={`${EXPLORER_URL}/address/0x0747EEf0706327138c69792bF28Cd525089e4583`} target="_blank" rel="noopener noreferrer" className="text-xs font-mono text-violet-400 hover:underline">0x0747EE...4583</a>
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-xs text-gray-500">USDC</span>
-                  <span className="text-xs font-mono text-violet-400">0x360000...0000</span>
+                  <a href={`${EXPLORER_URL}/address/0x3600000000000000000000000000000000000000`} target="_blank" rel="noopener noreferrer" className="text-xs font-mono text-violet-400 hover:underline">0x360000...0000</a>
                 </div>
               </div>
             </div>
@@ -79,3 +71,5 @@ export default function JobsPage() {
     </div>
   );
 }
+
+const EXPLORER_URL = 'https://testnet.arcscan.app';

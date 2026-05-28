@@ -1,4 +1,4 @@
-import { ChatAnthropic } from '@langchain/anthropic';
+import { ChatOpenAI } from '@langchain/openai';
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { Tool } from '@langchain/core/tools';
 import { createPublicClient, createWalletClient, http, parseUnits, formatUnits, type Address, type Hash } from 'viem';
@@ -33,6 +33,9 @@ export interface AgentContext {
 export interface AgentConfig {
   privateKey: `0x${string}`;
   anthropicApiKey?: string;
+  apiKey?: string;
+  apiBaseUrl?: string;
+  modelName?: string;
   maxActionsPerCycle?: number;
   balanceThreshold?: string;
   maxRetries?: number;
@@ -88,8 +91,21 @@ class CheckBalanceTool extends Tool {
     this.publicClient = publicClient;
   }
 
-  async _call(address: string): Promise<string> {
+  async _call(input: string): Promise<string> {
     try {
+      // Handle both plain address and JSON input
+      let address: string;
+      try {
+        const parsed = JSON.parse(input);
+        address = parsed.address || parsed.to || parsed.addr || input;
+      } catch {
+        address = input.trim();
+      }
+      
+      if (!address.startsWith('0x') || address.length !== 42) {
+        return `Error: Invalid address "${address}". Must be 0x + 40 hex chars.`;
+      }
+
       const balance = await this.publicClient.readContract({
         address: USDC_ADDRESS,
         abi: USDC_ABI,
@@ -256,7 +272,7 @@ class CreateJobTool extends Tool {
 // ============================================
 
 export class TreasuryAgent {
-  protected model: ChatAnthropic;
+  protected model: ChatOpenAI;
   private publicClient;
   private walletClient;
   private account;
@@ -273,11 +289,14 @@ export class TreasuryAgent {
       ...config,
     };
 
-    this.model = new ChatAnthropic({
-      modelName: 'claude-3-5-sonnet-20241022',
-      anthropicApiKey: config.anthropicApiKey || process.env.ANTHROPIC_API_KEY,
+    this.model = new ChatOpenAI({
+      modelName: config.modelName || process.env.AI_MODEL_NAME || 'mimo-v2.5-pro',
+      apiKey: config.apiKey || process.env.AI_API_KEY || 'dummy',
       temperature: 0.1,
-      maxRetries: 2, // LangChain built-in retries
+      maxRetries: 2,
+      configuration: {
+        baseURL: config.apiBaseUrl || process.env.AI_API_BASE_URL || 'https://api.openai.com/v1',
+      },
     });
 
     this.account = privateKeyToAccount(config.privateKey);

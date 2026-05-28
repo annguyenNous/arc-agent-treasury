@@ -49,7 +49,7 @@ export class CronManager {
       // Create supervisor with all specialized agents
       const supervisor = createSupervisorAgent(
         config.agentConfig.privateKey,
-        config.agentConfig.anthropicApiKey
+        config.agentConfig.apiKey
       );
       this.supervisors.set(id, supervisor);
     } else {
@@ -230,7 +230,7 @@ export function startTreasuryCron(
   privateKey: `0x${string}`,
   options: {
     intervalMinutes?: number;
-    anthropicApiKey?: string;
+    apiKey?: string;
     maxRuns?: number;
   } = {}
 ): CronManager {
@@ -240,7 +240,7 @@ export function startTreasuryCron(
     intervalMs: (options.intervalMinutes || 5) * 60 * 1000,
     agentConfig: {
       privateKey,
-      anthropicApiKey: options.anthropicApiKey,
+      apiKey: options.apiKey,
       maxActionsPerCycle: 3,
       balanceThreshold: '1.0',
     },
@@ -259,7 +259,7 @@ export function startMultiAgentCron(
   privateKey: `0x${string}`,
   options: {
     intervalMinutes?: number;
-    anthropicApiKey?: string;
+    apiKey?: string;
     maxRuns?: number;
   } = {}
 ): CronManager {
@@ -269,7 +269,7 @@ export function startMultiAgentCron(
     intervalMs: (options.intervalMinutes || 5) * 60 * 1000,
     agentConfig: {
       privateKey,
-      anthropicApiKey: options.anthropicApiKey,
+      apiKey: options.apiKey,
       maxActionsPerCycle: 3,
       balanceThreshold: '1.0',
     },

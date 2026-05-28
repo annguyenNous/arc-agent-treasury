@@ -10,7 +10,9 @@ dotenv.config({ path: '.env.local' });
 
 const CONFIG = {
   privateKey: process.env.AGENT_PRIVATE_KEY as `0x${string}`,
-  anthropicApiKey: process.env.ANTHROPIC_API_KEY,
+  apiKey: process.env.AI_API_KEY,
+  apiBaseUrl: process.env.AI_API_BASE_URL,
+  modelName: process.env.AI_MODEL_NAME,
   mode: process.argv[2] || 'once', // 'once' or 'cron'
   intervalMinutes: parseInt(process.argv[3] || '5'),
   maxRuns: parseInt(process.argv[4] || '0'), // 0 = unlimited
@@ -27,8 +29,8 @@ function validateConfig(): void {
     process.exit(1);
   }
 
-  if (!CONFIG.anthropicApiKey) {
-    console.warn('Warning: ANTHROPIC_API_KEY not set. AI analysis will be limited.');
+  if (!CONFIG.apiKey) {
+    console.warn('Warning: AI_API_KEY not set. AI analysis will be limited.');
   }
 }
 
@@ -41,7 +43,7 @@ async function runOnce(): Promise<void> {
 
   const agent = new TreasuryAgent({
     privateKey: CONFIG.privateKey,
-    anthropicApiKey: CONFIG.anthropicApiKey,
+    apiKey: CONFIG.apiKey, apiBaseUrl: CONFIG.apiBaseUrl, modelName: CONFIG.modelName,
     maxActionsPerCycle: 5,
   });
 
@@ -73,7 +75,7 @@ async function runCron(): Promise<void> {
 
   const manager = startTreasuryCron(CONFIG.privateKey, {
     intervalMinutes: CONFIG.intervalMinutes,
-    anthropicApiKey: CONFIG.anthropicApiKey,
+    apiKey: CONFIG.apiKey, apiBaseUrl: CONFIG.apiBaseUrl, modelName: CONFIG.modelName,
     maxRuns: CONFIG.maxRuns || undefined,
   });
 

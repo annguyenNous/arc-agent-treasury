@@ -3,75 +3,67 @@
 import { useState } from 'react';
 import { useAccount, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
 import { parseUnits, isAddress } from 'viem';
-import { USDC_ADDRESS, EXPLORER_URL } from '@/config/chains';
-import { USDC_ABI } from '@/contracts/abis';
-
-interface ScheduledPayment {
-  id: string;
-  recipient: string;
-  amount: string;
-  frequency: string;
-  label: string;
-  nextPayment: string;
-  status: 'pending' | 'executed' | 'failed';
-}
+import { AGENT_TREASURY, EXPLORER_URL } from '@/config/chains';
+import { TREASURY_ABI } from '@/hooks/useAgentTreasury';
 
 export default function PaymentScheduler() {
   const { isConnected } = useAccount();
-  const [payments, setPayments] = useState<ScheduledPayment[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [recipient, setRecipient] = useState('');
   const [amount, setAmount] = useState('');
   const [frequency, setFrequency] = useState('monthly');
   const [label, setLabel] = useState('');
+  const [agentId, setAgentId] = useState('1');
+  const [error, setError] = useState<string | null>(null);
 
-  const { writeContract, data: txHash, isPending } = useWriteContract();
+  const { writeContract, data: txHash, isPending, error: writeError } = useWriteContract();
   const { isSuccess } = useWaitForTransactionReceipt({ hash: txHash });
 
-  const handleAddPayment = () => {
-    if (!isAddress(recipient) || !amount) return;
-    
-    const newPayment: ScheduledPayment = {
-      id: Date.now().toString(),
-      recipient,
-      amount,
-      frequency,
-      label: label || 'Untitled Payment',
-      nextPayment: getNextPaymentDate(frequency),
-      status: 'pending',
-    };
-    
-    setPayments([...payments, newPayment]);
-    setShowForm(false);
-    setRecipient('');
-    setAmount('');
-    setLabel('');
-  };
-
-  const handleExecutePayment = (payment: ScheduledPayment) => {
-    writeContract({
-      address: USDC_ADDRESS,
-      abi: USDC_ABI,
-      functionName: 'transfer',
-      args: [payment.recipient as `0x${string}`, parseUnits(payment.amount, 6)],
-    });
-    
-    // Update payment status after execution
-    setPayments(prev => prev.map(p => 
-      p.id === payment.id ? { ...p, status: 'executed' as const } : p
-    ));
-  };
-
-  const getNextPaymentDate = (freq: string): string => {
-    const now = new Date();
+  const getIntervalSeconds = (freq: string): number => {
     switch (freq) {
-      case 'daily': now.setDate(now.getDate() + 1); break;
-      case 'weekly': now.setDate(now.getDate() + 7); break;
-      case 'monthly': now.setMonth(now.getMonth() + 1); break;
-      case 'quarterly': now.setMonth(now.getMonth() + 3); break;
+      case 'once': return 0;
+      case 'daily': return 86400;
+      case 'weekly': return 604800;
+      case 'monthly': return 2592000;
+      case 'quarterly': return 7776000;
+      default: return 0;
     }
-    return now.toLocaleDateString();
   };
+
+  const handleSchedule = () => {
+    if (!isAddress(recipient) || !amount || parseFloat(amount) <= 0) {
+      setError('Invalid recipient or amount');
+      return;
+    }
+    setError(null);
+
+    const interval = getIntervalSeconds(frequency);
+    const maxExec = frequency === 'once' ? 1 : 0; // 0 = unlimited for recurring
+
+    writeContract({
+      address: AGENT_TREASURY,
+      abi: TREASURY_ABI,
+      functionName: 'schedulePayment',
+      args: [
+        recipient as `0x${string}`,
+        parseUnits(amount, 6),
+        BigInt(interval),
+        BigInt(maxExec),
+        label || 'Payment',
+        BigInt(agentId),
+      ],
+    });
+  };
+
+  // Reset form after success
+  if (isSuccess && showForm) {
+    setTimeout(() => {
+      setShowForm(false);
+      setRecipient('');
+      setAmount('');
+      setLabel('');
+    }, 2000);
+  }
 
   if (!isConnected) {
     return (
@@ -84,14 +76,16 @@ export default function PaymentScheduler() {
 
   return (
     <div className="bg-gray-900 rounded-2xl p-6 border border-gray-800">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-4">
         <h2 className="text-lg font-semibold text-white">Payment Scheduler</h2>
-        <button
-          onClick={() => setShowForm(!showForm)}
-          className="px-4 py-2 bg-violet-600 text-white text-sm rounded-lg hover:bg-violet-700 transition-colors"
-        >
-          + Add Payment
-        </button>
+        {!showForm && (
+          <button
+            onClick={() => setShowForm(true)}
+            className="px-4 py-2 bg-violet-600 text-white text-sm rounded-lg hover:bg-violet-700 transition-colors"
+          >
+            + Add Payment
+          </button>
+        )}
       </div>
 
       {showForm && (
@@ -123,76 +117,76 @@ export default function PaymentScheduler() {
               onChange={(e) => setFrequency(e.target.value)}
               className="px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-violet-500 text-sm"
             >
+              <option value="once">One-time</option>
               <option value="daily">Daily</option>
               <option value="weekly">Weekly</option>
               <option value="monthly">Monthly</option>
               <option value="quarterly">Quarterly</option>
             </select>
           </div>
+          <input
+            type="number"
+            placeholder="Agent ID (default: 1)"
+            value={agentId}
+            onChange={(e) => setAgentId(e.target.value)}
+            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-violet-500 text-sm"
+          />
+
+          {error && <p className="text-red-400 text-xs">{error}</p>}
+          {writeError && <p className="text-red-400 text-xs">{writeError.message?.slice(0, 150)}</p>}
+
+          {isSuccess && (
+            <div className="bg-green-900/20 border border-green-800/30 rounded-lg p-3">
+              <p className="text-green-400 text-sm">Payment scheduled on-chain!</p>
+              {txHash && (
+                <a href={`${EXPLORER_URL}/tx/${txHash}`} target="_blank" rel="noopener noreferrer" className="text-green-300 text-xs hover:underline">
+                  View TX →
+                </a>
+              )}
+            </div>
+          )}
+
           <div className="flex gap-2">
             <button
-              onClick={handleAddPayment}
-              className="flex-1 py-2 bg-violet-600 text-white rounded-lg hover:bg-violet-700 text-sm"
+              onClick={handleSchedule}
+              disabled={isPending || !recipient || !amount}
+              className="flex-1 py-2 bg-violet-600 text-white rounded-lg hover:bg-violet-700 disabled:opacity-50 text-sm"
             >
-              Schedule
+              {isPending ? 'Confirming...' : 'Schedule on Treasury'}
             </button>
             <button
-              onClick={() => setShowForm(false)}
+              onClick={() => { setShowForm(false); setError(null); }}
               className="px-4 py-2 bg-gray-700 text-gray-300 rounded-lg hover:bg-gray-600 text-sm"
             >
               Cancel
             </button>
           </div>
+
+          <p className="text-xs text-gray-500 text-center">
+            Stored on-chain via AgentTreasury · Executable by AI agent or Gelato
+          </p>
         </div>
       )}
 
-      {payments.length === 0 ? (
-        <div className="text-center py-8">
-          <svg className="w-12 h-12 text-gray-600 mx-auto mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      {!showForm && !txHash && (
+        <div className="text-center py-6">
+          <svg className="w-10 h-10 text-gray-600 mx-auto mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
-          <p className="text-gray-400">No scheduled payments</p>
-          <p className="text-gray-500 text-sm mt-1">Add recurring payments for your AI agents to execute</p>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {payments.map((payment) => (
-            <div key={payment.id} className="bg-gray-800/50 rounded-xl p-4 flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-white">{payment.label}</p>
-                <p className="text-xs text-gray-400">{payment.amount} USDC · {payment.frequency}</p>
-                <p className="text-xs text-gray-500 font-mono">{payment.recipient.slice(0, 10)}...{payment.recipient.slice(-8)}</p>
-              </div>
-              <div className="text-right">
-                <p className="text-xs text-gray-500">Next: {payment.nextPayment}</p>
-                <span className={`inline-block mt-1 px-2 py-1 text-xs rounded-full ${
-                  payment.status === 'executed' ? 'bg-green-500/20 text-green-400' :
-                  payment.status === 'failed' ? 'bg-red-500/20 text-red-400' :
-                  'bg-yellow-500/20 text-yellow-400'
-                }`}>
-                  {payment.status}
-                </span>
-                <button
-                  onClick={() => handleExecutePayment(payment)}
-                  disabled={isPending || payment.status === 'executed'}
-                  className="block mt-2 px-3 py-1 bg-violet-600 text-white text-xs rounded-lg hover:bg-violet-700 disabled:opacity-50"
-                >
-                  {isPending ? 'Executing...' : 'Execute Now'}
-                </button>
-              </div>
-            </div>
-          ))}
+          <p className="text-gray-400 text-sm">No scheduled payments</p>
+          <p className="text-gray-500 text-xs mt-1">Schedule recurring payments for your AI agents</p>
         </div>
       )}
 
-      {isSuccess && (
-        <div className="mt-4 p-3 bg-green-500/10 border border-green-500/20 rounded-xl">
-          <p className="text-green-400 text-sm">Payment sent successfully!</p>
-          {txHash && (
-            <a href={`${EXPLORER_URL}/tx/${txHash}`} target="_blank" rel="noopener noreferrer" className="text-green-300 text-xs hover:underline">
-              View transaction →
-            </a>
-          )}
+      {!showForm && isSuccess && (
+        <div className="text-center py-4">
+          <p className="text-green-400 text-sm mb-1">✓ Payment scheduled!</p>
+          <button
+            onClick={() => { setShowForm(true); }}
+            className="text-violet-400 text-sm hover:underline"
+          >
+            Schedule another
+          </button>
         </div>
       )}
     </div>

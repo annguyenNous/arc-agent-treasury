@@ -174,3 +174,115 @@ export const REPUTATION_ABI = [
     outputs: [],
   },
 ] as const;
+
+export const TREASURY_ABI = [
+  {
+    name: 'deposit',
+    type: 'function',
+    stateMutability: 'nonpayable',
+    inputs: [{ name: 'amount', type: 'uint256' }],
+    outputs: [],
+  },
+  {
+    name: 'getTreasuryInfo',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [
+      {
+        name: '',
+        type: 'tuple',
+        components: [
+          { name: 'totalBalance', type: 'uint256' },
+          { name: 'allocatedToAgents', type: 'uint256' },
+          { name: 'reservedForPayments', type: 'uint256' },
+          { name: 'available', type: 'uint256' },
+        ],
+      },
+    ],
+  },
+  {
+    name: 'registerAgent',
+    type: 'function',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'erc8004TokenId', type: 'uint256' },
+      { name: 'name', type: 'string' },
+      { name: 'agentType', type: 'string' },
+      { name: 'budget', type: 'uint256' },
+    ],
+    outputs: [{ name: '', type: 'uint256' }],
+  },
+  {
+    name: 'schedulePayment',
+    type: 'function',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'recipient', type: 'address' },
+      { name: 'amount', type: 'uint256' },
+      { name: 'interval', type: 'uint256' },
+      { name: 'maxExecutions', type: 'uint256' },
+      { name: 'label', type: 'string' },
+      { name: 'agentId', type: 'uint256' },
+    ],
+    outputs: [{ name: '', type: 'uint256' }],
+  },
+  {
+    name: 'executePayment',
+    type: 'function',
+    stateMutability: 'nonpayable',
+    inputs: [{ name: 'paymentId', type: 'uint256' }],
+    outputs: [],
+  },
+  {
+    name: 'getAgent',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [{ name: 'agentId', type: 'uint256' }],
+    outputs: [
+      {
+        name: '',
+        type: 'tuple',
+        components: [
+          { name: 'agentId', type: 'uint256' },
+          { name: 'owner', type: 'address' },
+          { name: 'name', type: 'string' },
+          { name: 'agentType', type: 'string' },
+          { name: 'budget', type: 'uint256' },
+          { name: 'spent', type: 'uint256' },
+          { name: 'reputation', type: 'uint256' },
+          { name: 'active', type: 'bool' },
+          { name: 'createdAt', type: 'uint256' },
+        ],
+      },
+    ],
+  },
+  {
+    name: 'agentCount',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ name: '', type: 'uint256' }],
+  },
+  {
+    name: 'paymentCount',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ name: '', type: 'uint256' }],
+  },
+  {
+    name: 'totalAllocated',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ name: '', type: 'uint256' }],
+  },
+  {
+    name: 'totalReserved',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ name: '', type: 'uint256' }],
+  },
+] as const;

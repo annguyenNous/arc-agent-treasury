@@ -3,8 +3,8 @@ import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { Tool } from '@langchain/core/tools';
 import { createPublicClient, createWalletClient, http, parseUnits, formatUnits, type Address, type Hash } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
-import { arcTestnet, USDC_ADDRESS, AGENTIC_COMMERCE, IDENTITY_REGISTRY, REPUTATION_REGISTRY } from '../config/chains';
-import { USDC_ABI, AGENTIC_COMMERCE_ABI, IDENTITY_REGISTRY_ABI, REPUTATION_ABI } from '../contracts/abis';
+import { arcTestnet, USDC_ADDRESS, AGENT_TREASURY, AGENTIC_COMMERCE, IDENTITY_REGISTRY, REPUTATION_REGISTRY } from '../config/chains';
+import { USDC_ABI, AGENTIC_COMMERCE_ABI, IDENTITY_REGISTRY_ABI, REPUTATION_ABI, TREASURY_ABI } from '../contracts/abis';
 import { CreateEscrowTool, RebalanceYieldTool, ProcessPayrollTool, VerifyInvoiceTool } from './tools';
 
 // ============================================
@@ -101,6 +101,9 @@ class CheckBalanceTool extends Tool {
       } catch {
         address = input.trim();
       }
+      
+      // Strip quotes if present
+      address = address.replace(/^["']|["']$/g, '');
       
       if (!address.startsWith('0x') || address.length !== 42) {
         return `Error: Invalid address "${address}". Must be 0x + 40 hex chars.`;
@@ -268,6 +271,231 @@ class CreateJobTool extends Tool {
 }
 
 // ============================================
+// TREASURY TOOLS (Deposit, Schedule, Execute)
+// ============================================
+
+class DepositToTreasuryTool extends Tool {
+  name = 'deposit_to_treasury';
+  description = 'Deposit USDC to AgentTreasury contract. Input: JSON {"amount": "5"}';
+  
+  private walletClient;
+  private account;
+  
+  constructor(walletClient: ReturnType<typeof createWalletClient>, account: ReturnType<typeof privateKeyToAccount>) {
+    super();
+    this.walletClient = walletClient;
+    this.account = account;
+  }
+
+  async _call(input: string): Promise<string> {
+    try {
+      const { amount } = JSON.parse(input);
+      const parsedAmount = parseUnits(amount, 6);
+      
+      // First approve
+      const approveHash = await this.walletClient.writeContract({
+        chain: arcTestnet,
+        account: this.account,
+        address: USDC_ADDRESS,
+        abi: USDC_ABI,
+        functionName: 'approve',
+        args: [AGENT_TREASURY, parsedAmount],
+      });
+      
+      // Then deposit
+      const depositHash = await this.walletClient.writeContract({
+        chain: arcTestnet,
+        account: this.account,
+        address: AGENT_TREASURY,
+        abi: TREASURY_ABI,
+        functionName: 'deposit',
+        args: [parsedAmount],
+      });
+      
+      return `Deposited ${amount} USDC to treasury! Approve TX: ${approveHash}, Deposit TX: ${depositHash}`;
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      return `Deposit failed: ${message}`;
+    }
+  }
+}
+
+class SchedulePaymentTool extends Tool {
+  name = 'schedule_payment';
+  description = 'Schedule a recurring payment on treasury. Input: JSON {"recipient": "0x...", "amount": "10", "interval": 86400, "label": "Server hosting", "agentId": 1}';
+  
+  private walletClient;
+  private account;
+  
+  constructor(walletClient: ReturnType<typeof createWalletClient>, account: ReturnType<typeof privateKeyToAccount>) {
+    super();
+    this.walletClient = walletClient;
+    this.account = account;
+  }
+
+  async _call(input: string): Promise<string> {
+    try {
+      const { recipient, amount, interval = 0, maxExecutions = 0, label = 'Payment', agentId = 1 } = JSON.parse(input);
+      
+      const hash = await this.walletClient.writeContract({
+        chain: arcTestnet,
+        account: this.account,
+        address: AGENT_TREASURY,
+        abi: TREASURY_ABI,
+        functionName: 'schedulePayment',
+        args: [
+          recipient as Address,
+          parseUnits(amount, 6),
+          BigInt(interval),
+          BigInt(maxExecutions),
+          label,
+          BigInt(agentId),
+        ],
+      });
+      
+      return `Payment scheduled! TX: ${hash}. ${amount} USDC to ${recipient}, interval: ${interval}s, label: ${label}`;
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      return `Schedule payment failed: ${message}`;
+    }
+  }
+}
+
+class ExecutePaymentTool extends Tool {
+  name = 'execute_payment';
+  description = 'Execute a scheduled payment by ID. Input: paymentId (number)';
+  
+  private walletClient;
+  private account;
+  
+  constructor(walletClient: ReturnType<typeof createWalletClient>, account: ReturnType<typeof privateKeyToAccount>) {
+    super();
+    this.walletClient = walletClient;
+    this.account = account;
+  }
+
+  async _call(input: string): Promise<string> {
+    try {
+      const paymentId = parseInt(input.trim());
+      const hash = await this.walletClient.writeContract({
+        chain: arcTestnet,
+        account: this.account,
+        address: AGENT_TREASURY,
+        abi: TREASURY_ABI,
+        functionName: 'executePayment',
+        args: [BigInt(paymentId)],
+      });
+      return `Payment #${paymentId} executed! TX: ${hash}`;
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      return `Execute payment failed: ${message}`;
+    }
+  }
+}
+
+class GetTreasuryInfoTool extends Tool {
+  name = 'get_treasury_info';
+  description = 'Get treasury contract info (balance, allocated, reserved, available). Input: (none)';
+  
+  private publicClient;
+  
+  constructor(publicClient: ReturnType<typeof createPublicClient>) {
+    super();
+    this.publicClient = publicClient;
+  }
+
+  async _call(): Promise<string> {
+    try {
+      const info = await this.publicClient.readContract({
+        address: AGENT_TREASURY,
+        abi: TREASURY_ABI,
+        functionName: 'getTreasuryInfo',
+      }) as unknown as { totalBalance: bigint; allocatedToAgents: bigint; reservedForPayments: bigint; available: bigint };
+      
+      return JSON.stringify({
+        totalBalance: formatUnits(info.totalBalance, 6),
+        allocatedToAgents: formatUnits(info.allocatedToAgents, 6),
+        reservedForPayments: formatUnits(info.reservedForPayments, 6),
+        available: formatUnits(info.available, 6),
+      });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      return `Error: ${message}`;
+    }
+  }
+}
+
+class GetAgentInfoTool extends Tool {
+  name = 'get_agent_info';
+  description = 'Get agent details from treasury. Input: agentId (number)';
+  
+  private publicClient;
+  
+  constructor(publicClient: ReturnType<typeof createPublicClient>) {
+    super();
+    this.publicClient = publicClient;
+  }
+
+  async _call(input: string): Promise<string> {
+    try {
+      const agentId = parseInt(input.trim());
+      const agent = await this.publicClient.readContract({
+        address: AGENT_TREASURY,
+        abi: TREASURY_ABI,
+        functionName: 'getAgent',
+        args: [BigInt(agentId)],
+      }) as unknown as { agentId: bigint; owner: string; name: string; agentType: string; budget: bigint; spent: bigint; reputation: bigint; active: boolean; createdAt: bigint };
+      
+      return JSON.stringify({
+        agentId: agent.agentId.toString(),
+        owner: agent.owner,
+        name: agent.name,
+        agentType: agent.agentType,
+        budget: formatUnits(agent.budget, 6),
+        spent: formatUnits(agent.spent, 6),
+        reputation: agent.reputation.toString(),
+        active: agent.active,
+      });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      return `Error: ${message}`;
+    }
+  }
+}
+
+class ApproveUSDCTool extends Tool {
+  name = 'approve_usdc';
+  description = 'Approve USDC spending. Input: JSON {"spender": "0x...", "amount": "100"}';
+  
+  private walletClient;
+  private account;
+  
+  constructor(walletClient: ReturnType<typeof createWalletClient>, account: ReturnType<typeof privateKeyToAccount>) {
+    super();
+    this.walletClient = walletClient;
+    this.account = account;
+  }
+
+  async _call(input: string): Promise<string> {
+    try {
+      const { spender, amount } = JSON.parse(input);
+      const hash = await this.walletClient.writeContract({
+        chain: arcTestnet,
+        account: this.account,
+        address: USDC_ADDRESS,
+        abi: USDC_ABI,
+        functionName: 'approve',
+        args: [spender as Address, parseUnits(amount, 6)],
+      });
+      return `Approved ${amount} USDC for ${spender}! TX: ${hash}`;
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      return `Approve failed: ${message}`;
+    }
+  }
+}
+
+// ============================================
 // TREASURY AGENT CLASS
 // ============================================
 
@@ -313,12 +541,20 @@ export class TreasuryAgent {
     });
 
     this.tools = [
+      // Core tools
       new CheckBalanceTool(this.publicClient),
       new TransferUSDCTool(this.walletClient, this.account),
       new GetBlockInfoTool(this.publicClient),
       new RegisterAgentTool(this.walletClient, this.account),
       new CreateJobTool(this.walletClient, this.account),
-      // New tools from Circle + TreasuryPilot patterns
+      // Treasury tools
+      new DepositToTreasuryTool(this.walletClient, this.account),
+      new SchedulePaymentTool(this.walletClient, this.account),
+      new ExecutePaymentTool(this.walletClient, this.account),
+      new GetTreasuryInfoTool(this.publicClient),
+      new GetAgentInfoTool(this.publicClient),
+      new ApproveUSDCTool(this.walletClient, this.account),
+      // DeFi tools
       new CreateEscrowTool(this.walletClient, this.account),
       new RebalanceYieldTool(this.publicClient, this.walletClient, this.account),
       new ProcessPayrollTool(this.walletClient, this.account),
@@ -363,37 +599,41 @@ export class TreasuryAgent {
   // ============================================
 
   async analyze(context: AgentContext): Promise<AgentAction[]> {
-    const systemPrompt = `You are ArcAgent Treasury, an AI agent managing USDC on ARC Network.
+    const systemPrompt = `You are ArcAgent Treasury, an autonomous AI agent managing USDC on ARC Network.
 
 AVAILABLE TOOLS:
-- check_balance: Check USDC balance of an address. Input: address (0x...)
-- transfer_usdc: Transfer USDC to an address. Input: JSON {"to": "0x...", "amount": "10.5"}
-- register_agent: Register agent on ERC-8004 identity registry. Input: metadataURI (string)
-- create_job: Create ERC-8183 job/task. Input: JSON {"provider": "0x...", "description": "...", "duration": 86400}
-- get_block_info: Get current block info. Input: (none)
-- create_escrow: Create USDC escrow for freelancer/gig worker. Input: JSON {"amount": "100", "recipient": "0x...", "taskId": "task-001", "releaseCondition": "auto_after_days"}
-- rebalance_yield: Check idle USDC and recommend rebalancing to yield pool. Input: JSON {"threshold": "100"}
-- process_payroll: Process batch payroll payments. Input: JSON {"payments": [{"to": "0x...", "amount": "1000", "label": "salary"}]}
-- verify_invoice: Verify an invoice and prepare for approval. Input: JSON {"invoiceId": "INV-001", "amount": "500", "vendor": "0x...", "description": "Server hosting"}
+- check_balance: Check USDC balance. Input: "0x..." address
+- transfer_usdc: Transfer USDC. Input: JSON {"to": "0x...", "amount": "10.5"}
+- approve_usdc: Approve USDC spending. Input: JSON {"spender": "0x...", "amount": "100"}
+- deposit_to_treasury: Deposit USDC to treasury contract. Input: JSON {"amount": "5"}
+- get_treasury_info: Get treasury info (balance, allocated, reserved, available). Input: (none)
+- get_agent_info: Get agent details. Input: agentId (number)
+- schedule_payment: Schedule recurring payment. Input: JSON {"recipient": "0x...", "amount": "10", "interval": 86400, "label": "hosting", "agentId": 1}
+- execute_payment: Execute scheduled payment. Input: paymentId (number)
+- register_agent: Register on ERC-8004. Input: metadataURI (string)
+- create_job: Create ERC-8183 job. Input: JSON {"provider": "0x...", "description": "...", "duration": 86400}
+- create_escrow: Create USDC escrow. Input: JSON {"amount": "100", "recipient": "0x...", "taskId": "task-001"}
+- rebalance_yield: Rebalance idle USDC to yield. Input: JSON {"threshold": "100"}
+- process_payroll: Batch payroll. Input: JSON {"payments": [{"to": "0x...", "amount": "1000", "label": "salary"}]}
+- verify_invoice: Verify invoice. Input: JSON {"invoiceId": "INV-001", "amount": "500", "vendor": "0x...", "description": "..."}
+- get_block_info: Get current block. Input: (none)
 
 CURRENT STATE:
 - Wallet: ${context.address}
 - Balance: ${context.balanceFormatted} USDC
 - Network: ${context.network} (Chain ID: ${context.chainId})
+- Recent actions: ${context.recentActions.length > 0 ? context.recentActions.map(a => a.type).join(', ') : 'none'}
 
 SAFETY RULES:
-1. NEVER transfer if balance < 1 USDC
+1. ALWAYS check balance before any transfer
 2. NEVER transfer more than 50% of balance
-3. ALWAYS check balance before any transfer
-4. NEVER auto-pay invoices — always require manual approval
-5. NEVER auto-transfer for rebalancing — only recommend
-6. Keep at least 20% of idle funds as operational buffer
+3. Keep at least 1 USDC as gas reserve
+4. Auto-execute payments under 10 USDC
+5. For payments > 100 USDC, recommend manual approval
 
-Return an array of up to 3 actions, each with:
-{
-  "type": "check_balance" | "transfer_usdc" | "register_agent" | "create_job" | "get_block_info" | "create_escrow" | "rebalance_yield" | "process_payroll" | "verify_invoice",
-  "params": { ... }
-}`;
+You are an ACTIVE agent - execute actions, don't just recommend.
+Return a JSON array of actions to execute. Each action: {"type": "tool_name", "params": {...}}
+Execute up to ${this.config.maxActionsPerCycle} actions per cycle.`;
 
     const humanMessage = `Analyze the treasury and recommend actions now.`;
 
